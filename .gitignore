@@ -15,3 +15,6 @@ docs/_build/
 
 # Windows
 desktop.ini
+
+#Backup
+*.bak

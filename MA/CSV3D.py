@@ -1,4 +1,6 @@
 from __future__ import division
+from __future__ import print_function
+from __future__ import absolute_import
 import numpy as np
 import os
 import MAPyLibs.ImageProcessing as MAIP
@@ -87,29 +89,29 @@ def ExportPlyBinary(Nodes,file,Faces=None,Colors=None):
         fp.write(faces.tostring())
 
 def MakeCSVMesh(CSVfile,**kwargs):
-    print "*Making CSV Mesh"
-    print "  - Reading .csv"
+    print("*Making CSV Mesh")
+    print("  - Reading .csv")
     npdata=MATL.getMatfromCSV(CSVfile)
     return MakeMPixMesh(npdata,**kwargs)
     
 def MakeMPixMesh(npdata,Scale=(1.0,1.0,1.0),ColFile=None,ColMat=None,Expfile=None):
     if ColFile is not None:
-        print "  - Getting Image"
+        print("  - Getting Image")
         Mpix=MAIP.GetRGBAImageMatrix(ColFile).reshape(-1,4)
         Colors=MakeColors(Mpix)
     elif ColMat is not None:
-        print "  - Getting Image"
+        print("  - Getting Image")
         Colors=MakeColors(ColMat)
     else:
         Colors=None
     
-    print "  - Generating Nodes"
+    print("  - Generating Nodes")
     Nodes=MakeNodes(npdata,Scale)
-    print "  - Generating Triangles"
+    print("  - Generating Triangles")
     Nr,Nc= np.shape(npdata)
     Faces=MakeFaces(Nr,Nc)
     if Expfile is not None:
-        print "  - Exporting Geometry"
+        print("  - Exporting Geometry")
         ExportPlyBinary(Nodes,Expfile,Faces,Colors)
     return Nodes,Faces,Colors    
     
@@ -119,12 +121,12 @@ def Make3DSurfaceFromHeightMapTiff(File):
     myimg=Image.open(File)
     xres,yres = myimg.info['resolution']
     Mpix = np.copy(np.asarray(myimg))
-    MakeMPixMesh(Mpix,Scale=(1/xres,1/yres,1.0),Expfile=outfile)   
+    return MakeMPixMesh(Mpix,Scale=(1/xres,1/yres,1.0),Expfile=outfile)   
     
     
     
     
 if __name__ == "__main__":
-    print "=Running Test"
+    print("=Running Test")
     fn="Tests/CSV3D/test"
     MakeCSVMesh(fn+".csv",ColFile=fn+".png",Expfile=fn+".ply")

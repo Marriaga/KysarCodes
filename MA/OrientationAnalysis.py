@@ -1,15 +1,15 @@
 #!/usr/bin/python
 from __future__ import division
-# from PIL import Image
+from __future__ import print_function
+from __future__ import absolute_import
+
 import numpy as np
-# import math
 import matplotlib.pyplot as plt
-# import timeit
 import progressbar
 import os
 
-import MAPyLibs.ImageProcessing as MAIP
-import MAPyLibs.Tools as MATL
+import MA.ImageProcessing as MAIP
+import MA.Tools as MATL
 
 from joblib import Parallel, delayed
 import multiprocessing
@@ -216,7 +216,7 @@ class ImageWindow():
         return (1-np.cos(2*np.pi*z))/2  
            
 class OrientationAnalysis():
-    def __init__(self,BaseAngFolder=None,OutputRoot=None):
+    def __init__(self,BaseAngFolder=None,OutputRoot=None,verbose=True):
         self.Window=ImageWindow() #Shape=512,WType="Blackman",Alpha=-1,PType="Radial",PadShape=-1
         self.ImageMatrix=None
         self.ImageShape=None
@@ -227,7 +227,7 @@ class OrientationAnalysis():
         
         self.OutputWindowed = MATL.MakeRoot(self.OutputRoot,"_"+self.GetWindowPropName())
 
-        self.FFTAnalysis = FFTAnalysis(BaseAngFolder=BaseAngFolder)
+        self.FFTAnalysis = FFTAnalysis(BaseAngFolder=BaseAngFolder,verbose=verbose)
         self.GradientAnalysis = GradientAnalysis()
      
     def GetWindowPropName(self):
@@ -268,12 +268,12 @@ class OrientationAnalysis():
             self.WorkImageMatrix = self.ImageMatrix
         MAIP.SaveShowImage(MAIP.Rescale8bit(self.WorkImageMatrix),self.OutputWindowed)
 
-    def ApplyFFT(self,NewImage=None):
+    def ApplyFFT(self,NewImage=None,**kwargs):
         if NewImage is not None: self.SetImage(NewImage)
         if self.WorkImageMatrix is None: self.ApplyWindow()
 
         self.FFTAnalysis.OutputRoot=self.OutputWindowed
-        ANGS,VALS,NameProp = self.FFTAnalysis.Apply(self.WorkImageMatrix)
+        ANGS,VALS,NameProp = self.FFTAnalysis.Apply(self.WorkImageMatrix,**kwargs)
         return OrientationResults(ANGS,VALS,OutputRoot=self.OutputWindowed+"_"+NameProp+"_FFT")
         
 
@@ -287,7 +287,7 @@ class OrientationAnalysis():
         
     
 class AngleFilters():
-    def __init__(self,Size=512,NBins=181,Scale=4,BaseAngFolder=None,FilterRadially=True):
+    def __init__(self,Size=512,NBins=181,Scale=4,BaseAngFolder=None,FilterRadially=True,verbose=True):
         self.Size = None
         self.NBins = None
         self.Scale = None
@@ -296,18 +296,20 @@ class AngleFilters():
         self.FilterRadially = None
         self.Mang = None
         self.Mrad = None
+        self.verbose=None
         
         if BaseAngFolder is None: BaseAngFolder = "temp"
-        self.Reset(Size=Size,NBins=NBins,Scale=Scale,BaseAngFolder=BaseAngFolder,FilterRadially=FilterRadially)
+        self.Reset(Size=Size,NBins=NBins,Scale=Scale,BaseAngFolder=BaseAngFolder,FilterRadially=FilterRadially,verbose=verbose)
 
         self.WarnNoBackup = False
 
-    def Reset(self,Size=None,NBins=None,Scale=None,BaseAngFolder=None,FilterRadially=None):
+    def Reset(self,Size=None,NBins=None,Scale=None,BaseAngFolder=None,FilterRadially=None,verbose=None):
         if Size is not None: self.Size = Size
         if NBins is not None: self.NBins = NBins
         if Scale is not None: self.Scale = Scale
         if BaseAngFolder is not None: self.BaseAngFolder = BaseAngFolder
         if FilterRadially is not None: self.FilterRadially = FilterRadially
+        if verbose is not None: self.verbose = verbose
         self.AngFolder = self.GetAngFolderPath()
         self.Mang = None
         self.Mrad = None
@@ -367,7 +369,7 @@ class AngleFilters():
     # Make folder with rescaled angle matrices for faster processing
     def CreateAngleFiles(self):
         if self.Mang is None: self.ComputeMang()
-        MATL.MakeNewDir(self.AngFolder,verbose=True)
+        MATL.MakeNewDir(self.AngFolder,verbose=self.verbose)
         ANGS=np.linspace(0,180,self.NBins)
         bar = progressbar.ProgressBar(max_value=180.0, term_width=80)
         for a in ANGS:
@@ -395,10 +397,10 @@ class AngleFilters():
         else:
             AngFilter=self.ComputeAngleFilter(a)
             if Backup:
-                MATL.MakeNewDir(self.AngFolder,verbose=True)
+                MATL.MakeNewDir(self.AngFolder,verbose=self.verbose)
                 np.save(fname,AngFilter)
             elif not self.WarnNoBackup:
-                print("Warning: Setting Backup to 'False' means that the filter will not be saved.\n \
+                if self.verbose: print("Warning: Setting Backup to 'False' means that the filter will not be saved.\n \
                        This should be avoided for repetitive runs.")
                 self.WarnNoBackup=True
             return AngFilter
@@ -408,16 +410,16 @@ class AngleFilters():
         return np.tensordot(AngFilter,Image)
         
 class FFTAnalysis():
-    def __init__(self,BaseAngFolder=None,OutputRoot=None,Mask=8):
-        self.AngleFilters=AngleFilters(Size=512,BaseAngFolder=BaseAngFolder) #Size=512,NBins=181,Scale=2,BaseAngFolder=None,FilterRadially=True
+    def __init__(self,BaseAngFolder=None,OutputRoot=None,verbose=True):
+        self.AngleFilters=AngleFilters(Size=512,BaseAngFolder=BaseAngFolder,verbose=verbose) #Size=512,NBins=181,Scale=2,BaseAngFolder=None,FilterRadially=True
         self.PowerSpectrum=None
         self.FFTSize = None
-        self.Mask=Mask
+        self.verbose=verbose
         self.OutputRoot = OutputRoot
         self.NameProps = self.AngleFilters.FolderName()
     
-    def SetAngleFiltersProperties(self,Size=None,NBins=None,Scale=None,BaseAngFolder=None,FilterRadially=None):
-        self.AngleFilters.Reset(Size=Size,NBins=NBins,Scale=Scale,BaseAngFolder=BaseAngFolder,FilterRadially=FilterRadially)
+    def SetAngleFiltersProperties(self,Size=None,NBins=None,Scale=None,BaseAngFolder=None,FilterRadially=None,verbose=None):
+        self.AngleFilters.Reset(Size=Size,NBins=NBins,Scale=Scale,BaseAngFolder=BaseAngFolder,FilterRadially=FilterRadially,verbose=verbose)
         self.NameProps = self.AngleFilters.FolderName()
 
     #Set the center of the Power Spectrum to 0 inside a circle of radius R    
@@ -429,28 +431,28 @@ class FFTAnalysis():
             return x**2+y**2<=R2
         self.PowerSpectrum[MAIP.np2Image(np.fromfunction(MkCircle,(self.FFTSize,self.FFTSize),S=self.FFTSize,R=R))]=0
     
-    def GetRes(self):
+    def GetRes(self,Backup=True):
         ## COLLECT WEDGE VALUES
         VALS=np.zeros(self.AngleFilters.NBins)
         ANGS=np.linspace(0,180,self.AngleFilters.NBins)
         
-        bar = progressbar.ProgressBar(max_value=180.0, term_width=80)
+        if self.verbose: bar = progressbar.ProgressBar(max_value=180.0, term_width=80)
         for iangle,Angle in enumerate(ANGS):
-            bar.update(Angle)
-            VALS[iangle]=self.AngleFilters.FilterImage(self.PowerSpectrum,Angle)
-        print " "
+            if self.verbose: bar.update(Angle)
+            VALS[iangle]=self.AngleFilters.FilterImage(self.PowerSpectrum,Angle,Backup=Backup)
+        if self.verbose: print(" ")
         VALS=VALS/np.amax(VALS)
         
         return ANGS,VALS        
         
-    def Apply(self,NumpyImage):
+    def Apply(self,NumpyImage,PSCenter=5,Backup=True):
         self.FFTSize = int(max(NumpyImage.shape)/2)*2 # FFT and Filtering done with even number (not sure if needed)
         self.SetAngleFiltersProperties(Size=self.FFTSize)
         self.PowerSpectrum = self.ComputePowerSpectrum(NumpyImage,self.FFTSize)
-        self.MaskPowerSpectrumCenter(5)
+        self.MaskPowerSpectrumCenter(PSCenter)
         MAIP.SaveShowImage(self.ScaledPS(),self.OutputRoot,"_PS")
 
-        ANGS,VALS = self.GetRes()
+        ANGS,VALS = self.GetRes(Backup=Backup)
 
         return ANGS,VALS,self.NameProps
         
@@ -587,13 +589,13 @@ class OrientationResults():
 # Main ...
 if __name__ == "__main__":
     print("Testing Orientation Analysis")
-    BaseAngFolder="C:\\Users\\Miguel\\Work\\FiberOrientationHistogram\\AngleFiles"
-    TestImage="Tests\\OrientationAnalysis\\RWM_IE_Z.png"   
+    # BaseAngFolder="C:\\Users\\Miguel\\Work\\FiberOrientationHistogram\\AngleFiles"
+    # TestImage="Tests\\OrientationAnalysis\\RWM_IE_Z.png"   
     
-    OAnalysis = OrientationAnalysis(BaseAngFolder=BaseAngFolder)
-    OAnalysis.SetImage(TestImage)
-    Results = OAnalysis.ApplyFFT()
-    Results.PlotHistogram()
-    OAnalysis.ApplyGradient().PlotHistogram()
+    # OAnalysis = OrientationAnalysis(BaseAngFolder=BaseAngFolder)
+    # OAnalysis.SetImage(TestImage)
+    # Results = OAnalysis.ApplyFFT()
+    # Results.PlotHistogram()
+    # OAnalysis.ApplyGradient().PlotHistogram()
 
 

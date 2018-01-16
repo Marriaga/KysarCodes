@@ -1,19 +1,25 @@
 #!/usr/bin/python
 from __future__ import division
+from __future__ import print_function
+from __future__ import absolute_import
 import matplotlib.pyplot as plt
 import numpy as np
 import subprocess
 import inspect
+import shutil
 import timeit
 import glob
 import csv
 import os
 
 
-
-
-
 ### File and Folder Manipulation ###
+
+# Deletes Folder Tree
+def DeleteFolderTree(Folder):
+    if os.path.exists(Folder):
+        #TODO: add exception handling for read-only files
+        shutil.rmtree(Folder)
 
 # Combine Root and Suffix for a path. It's robust
 def MakeRoot(Root=None,Suffix=None):
@@ -118,7 +124,7 @@ def SaveMPLfig(fig,FileName=None):
         try:
             fig.savefig(FileName)  
         except:
-            print "PDF IS OPEN!"
+            print("PDF IS OPEN!")
             ct=timeit.time.strftime("%Y%m%d%H%M%S",timeit.time.localtime())
             fig.savefig(FileName[:-4]+' (conflict_'+ct+').pdf')       
 
@@ -156,7 +162,7 @@ def RunMeshLabScript(Mesh_Path,Script_Path,Output_Path=None,Verbose=False):
     
     SetupOutput(Output_Path)
     cmd = "meshlabserver -i " + Mesh_Path + " -o " + Output_Path + " -s " + Script_Path
-    print cmd
+    print(cmd)
     RunProgram(cmd,Verbose)
     
 #Run a Shell process
@@ -165,29 +171,29 @@ def RunProgram(cmd,f_print=True):
 	while process.poll() is None:
 		if f_print:
 			outl = process.stdout.readline().strip()
-			print outl
+			print(outl)
 	
-	if f_print: print process.stdout.read()
+	if f_print: print(process.stdout.read())
 
 
 
 #Tic/Toc
 def Tic(p=None):
     t=timeit.default_timer()
-    if p is not None: print "Tic: " + str(t)
+    if p is not None: print("Tic: " + str(t))
     return t
     
 def Tec(s=None,p=None):
     t=timeit.default_timer()
     if s is not None:
         d=t-s
-    if p is not None: print "Tec: " + str(t)
+    if p is not None: print("Tec: " + str(t))
     return t
     
 def Toc(s,p=None):
     t=timeit.default_timer()
     d=t-s
-    if p is not None: print "Toc: " + str(d)
+    if p is not None: print("Toc: " + str(d))
     return d
     
 #Time a function
@@ -197,7 +203,7 @@ def Timeme(funct,var,NN=10,NNN=10):
         for t in xrange(NNN):
             funct(*var)
         end =timeit.default_timer()
-        print str(i)+': '+str((end - start)/NNN*1000)  
+        print(str(i)+': '+str((end - start)/NNN*1000))  
         
 #Get data from CSV format to numpy matrix format
 def getMatfromCSV(fn):     

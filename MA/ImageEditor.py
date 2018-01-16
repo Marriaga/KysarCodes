@@ -1,4 +1,6 @@
 from __future__ import division
+from __future__ import print_function
+from __future__ import absolute_import
 import Tkinter as tk
 from PIL import Image, ImageTk, ImageDraw
 
@@ -17,7 +19,7 @@ WHITE = (255, 255, 255)
 class ImgEditor(object):
     
     def __init__(self,FileImg):
-        print "*Running Image Editor"
+        print("*Running Image Editor")
         self.root = tk.Tk()        
         
         #Picture
