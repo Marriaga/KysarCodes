@@ -1,2 +1,4 @@
 # KysarCodes
-Repository for pythons codes developed in the lab of Prof. Kysar
+Repository for python codes developed in the lab of Prof. Kysar at Columbia University
+
+
