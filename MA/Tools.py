@@ -2,6 +2,8 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
+from builtins import str
+from builtins import range
 import matplotlib.pyplot as plt
 import numpy as np
 import subprocess
@@ -198,9 +200,9 @@ def Toc(s,p=False):
 #Time a function
 def Timeme(funct,var,NN=10,NNN=10,show=True):
     TotTime=0
-    for i in xrange(NN):
+    for i in range(NN):
         start =timeit.default_timer()
-        for t in xrange(NNN):
+        for t in range(NNN):
             funct(*var)
         end =timeit.default_timer()
         TimeDiff=(end - start)/NNN*1000
@@ -214,7 +216,7 @@ def getMatfromCSV(fn):
     data=[]
     if not fn[-4:].lower() == '.csv':
         fn=fn+".csv"
-    with open(fn, 'rb') as csvfile:
+    with open(fn, 'r') as csvfile:
         csvreader = csv.reader(csvfile, delimiter=',')
         for row in csvreader:
             data.append(np.array(row).astype(np.float32))
@@ -230,7 +232,7 @@ def macauley(M,p=True):
     
 # Invert Dictionary
 def invidct(mydict):
-    return {v: k for k, v in mydict.items()} 
+    return {v: k for k, v in list(mydict.items())} 
 
     
 #Compute eigenvalues of symetric 3x3 matrix    

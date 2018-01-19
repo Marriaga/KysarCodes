@@ -1,7 +1,10 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
-import Tkinter as tk
+from future import standard_library
+standard_library.install_aliases()
+from builtins import object
+import tkinter as tk
 from PIL import Image, ImageTk, ImageDraw
 
 # Centered Circle Functions

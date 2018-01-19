@@ -3,6 +3,9 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
 
+from builtins import str
+from builtins import range
+from builtins import object
 import numpy as np
 import matplotlib.pyplot as plt
 import progressbar
@@ -51,7 +54,7 @@ def FormatShape(Shape,ErrVarId="Shape"):
     return NewShape
 
 
-class ImageWindow():
+class ImageWindow(object):
     def __init__(self,Shape=512,WType="Tukey",Alpha=-1,PType="Radial",PadShape=-1):
         # Shape - Shape of Image
         # S -> SxS image
@@ -97,8 +100,8 @@ class ImageWindow():
     def SetWType(self,WType):
         NewWTypeName = None
         # Set Windowing WType
-        if type(WType) == type(str(0)):
-            if WType in self.WTypes_Dict.keys():
+        if type(WType) == type("string"):
+            if WType in list(self.WTypes_Dict.keys()):
                 NewWTypeName = WType
             else:
                 print("Windowing name (" + WType + ")not implemented")
@@ -214,7 +217,7 @@ class ImageWindow():
 
         return (1-np.cos(2*np.pi*z))/2  
            
-class OrientationAnalysis():
+class OrientationAnalysis(object):
     def __init__(self,BaseAngFolder=None,OutputRoot=None,verbose=True):
         self.Window=ImageWindow() #Shape=512,WType="Blackman",Alpha=-1,PType="Radial",PadShape=-1
         self.ImageMatrix=None
@@ -285,7 +288,7 @@ class OrientationAnalysis():
         return OrientationResults(ANGS,VALS,OutputRoot=self.OutputRoot+"_"+NameProp+"_Gradient")
         
     
-class AngleFilters():
+class AngleFilters(object):
     def __init__(self,Size=512,NBins=181,Scale=4,BaseAngFolder=None,FilterRadially=True,verbose=True):
         self.Size = None
         self.NBins = None
@@ -408,7 +411,7 @@ class AngleFilters():
         AngFilter = self.GetAngleFilter(Angle,Backup=Backup)
         return np.tensordot(AngFilter,Image)
         
-class FFTAnalysis():
+class FFTAnalysis(object):
     def __init__(self,BaseAngFolder=None,OutputRoot=None,verbose=True):
         self.AngleFilters=AngleFilters(Size=512,BaseAngFolder=BaseAngFolder,verbose=verbose) #Size=512,NBins=181,Scale=2,BaseAngFolder=None,FilterRadially=True
         self.PowerSpectrum=None
@@ -466,7 +469,7 @@ class FFTAnalysis():
     def ScaledPS(self):
         return MAIP.Rescale8bit(np.log(self.PowerSpectrum+1))
         
-class GradientAnalysis():
+class GradientAnalysis(object):
     def __init__(self,OutputRoot=None,NBins=181,SmoothingSteps=10,MovAvgSize=5):
         self.ScaledImage=None
         
@@ -539,7 +542,7 @@ class GradientAnalysis():
         
 
         
-class OrientationResults():
+class OrientationResults(object):
     def __init__(self,X,Y,OutputRoot=None):
         self.X=X
         self.Y=Y
@@ -580,7 +583,7 @@ class OrientationResults():
         ax.set_ylabel(ylabel)
         ax.set_xlim([xmin, xmax])
         ax.set_ylim([0,1])
-        ax.set_xticks(range(int(xmin),int(xmax+2),45))
+        ax.set_xticks(list(range(int(xmin),int(xmax+2),45)))
         ax.xaxis.grid(True,color='k',linestyle='--', linewidth=0.5)
 
         

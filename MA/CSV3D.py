@@ -1,6 +1,8 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
+from builtins import bytes
+from builtins import str
 import numpy as np
 import os
 import MA.ImageProcessing as MAIP
@@ -70,6 +72,7 @@ def ExportPlyBinary(Nodes,file,Faces=None,Colors=None):
     "element face "+str(LF)+"\n" \
     "property list uchar int vertex_indices\n" \
     "end_header\n"
+    header = bytes(header,'utf-8')
     
     dtype_vertex = [('vertex', '<f4', (3))]
     if Colors is not None: dtype_vertex.append(('rgba',   '<u1', (4)))

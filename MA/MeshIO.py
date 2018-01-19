@@ -1,6 +1,9 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
+from builtins import str
+from builtins import range
+from builtins import object
 import numpy as np
 import numpy.lib.recfunctions as nprec
 import sys
@@ -361,7 +364,7 @@ class PLYIO(BaseIO):
     def ReadNodesASCII(self,fp):
         Nodes = np.empty(self.NNodes,dtype=np.dtype(self.PropTypes.GetDtype()))
         NP = self.PropTypes.GetNProp()
-        for i in xrange(self.NNodes):
+        for i in range(self.NNodes):
             linelist=fp.readline().strip().split()
             for p in range(NP):
                 Nodes[i][p]=linelist[p]
@@ -371,7 +374,7 @@ class PLYIO(BaseIO):
     def ReadElemsASCII(self,fp):
         Elems = np.zeros(self.NElem,dtype=[('p1','i4'),('p2','i4'),('p3','i4')])
         NP = 3
-        for i in xrange(self.NElem):
+        for i in range(self.NElem):
             linelist=fp.readline().strip().split()[1:]
             for p in range(NP):
                 Elems[i][p]=linelist[p]
@@ -596,7 +599,7 @@ class VTUIO(BaseIO):
         
         
 
-class MyMesh():
+class MyMesh(object):
     def __init__(self,Nodes,Elems):
         self.NNodes = Nodes.GetNNodes()
         self.NElems = Elems.GetNElems()
@@ -647,40 +650,40 @@ class MyMesh():
     
     def ComputeNeighbours(self):
         # Reset
-        for i in xrange(self.NNodes):
+        for i in range(self.NNodes):
             self.NE[i]=[]
             self.NN[i]=[]
-        for e in xrange(self.NElems):
+        for e in range(self.NElems):
             self.EN[e]=[]
             self.EE[e]=[]
             
         # Compute EN and NE
-        for e in xrange(self.NElems):
+        for e in range(self.NElems):
             self.EN[e]=self.NewElemsMat[e]
             for p in self.EN[e]:
                 self.NE[p].append(e)
         
         # Compute NN
-        for i in xrange(self.NNodes): #For all nodes
+        for i in range(self.NNodes): #For all nodes
             for ei in self.NE[i]: #For all elements touching that node
                 for nei in self.EN[ei]: #For all nodes of that element
                     if (nei not in self.NN[i]) and (nei != i): self.NN[i].append(nei)
 
         # Compute EE    
-        for e in xrange(self.NElems): #For all elements    
+        for e in range(self.NElems): #For all elements    
             for ne in self.EN[e]: #For all nodes of that element
                 for ene in self.NE[ne]: #For all elements touching that node
                     if ene not in self.EE[e]: self.EE[e].append(ene)
 
     def ComputeSides(self):
         # Reset
-        for i in xrange(self.NNodes):
+        for i in range(self.NNodes):
             self.NS[i]=[]
 
         # Compute NS and Sides(ni,nf)
         GSides=0
         STemp=np.zeros((self.NNodes*10,2))
-        for n in xrange(self.NNodes):
+        for n in range(self.NNodes):
             for nd in self.NN[n]:
                 if n<nd:
                     STemp[GSides,0]=n
@@ -697,7 +700,7 @@ class MyMesh():
         # Compute ES and Sides(ei,ef)                 
         self.Sides['ei']=-1
         self.Sides['ef']=-1
-        for e in xrange(self.NElems): #For all elements
+        for e in range(self.NElems): #For all elements
             p1,p2,p3=self.EN[e]
             S1=self.FindSide(p1,p2)
             S2=self.FindSide(p1,p3)
@@ -720,7 +723,7 @@ class MyMesh():
             
     def ComputeBoundary(self):
         # Compute EIsB and NIsB
-        for si in xrange(self.NSides):
+        for si in range(self.NSides):
             ni,nf,ei,ef = [self.Sides[si][lab] for lab in ['ni','nf','ei','ef']]
             if ef==-1:
                 self.NIsB[ni]=True
@@ -745,7 +748,7 @@ class MyMesh():
         self.EAreas = np.empty(self.NElems,dtype='f8') #A
         self.NNorms = np.zeros((self.NNodes,3),dtype='f8') #nx,ny,nz
         
-        for e in xrange(self.NElems):
+        for e in range(self.NElems):
             #Triangle Points and Vectors
             P1,P2,P3 = [np.array([P['x'],P['y'],P['z']]) for P in self.Nodes.Mat[self.EN[e]]]
             V=P2-P1
@@ -771,7 +774,7 @@ class MyMesh():
                 self.NNorms[n,:]+=self.ENorms[e,:]*mymode(e,nei)
                 
         #Final Nodal Operations
-        for n in xrange(self.NNodes):
+        for n in range(self.NNodes):
             self.NNorms[n,:]/=np.linalg.norm(self.NNorms[n,:]) # Normalize Node Normals
 
     
@@ -797,7 +800,7 @@ class MyMesh():
         #Initialize NAreaG
         self.NAreaG[:] = 2*np.pi
         
-        for e in xrange(self.NElems):
+        for e in range(self.NElems):
             #Triangle Points and Vectors
             P1,P2,P3 = [np.array([P['x'],P['y'],P['z']]) for P in self.Nodes.Mat[self.EN[e]]]
             V=P2-P1
@@ -831,7 +834,7 @@ class MyMesh():
                     self.NAmix[n]+=self.EAreas[e]/4
         
         # Dihedral Angles
-        for si in xrange(self.NSides):
+        for si in range(self.NSides):
             if self.Sides['ef'][si] != -1:
                 ei=self.Sides['ei'][si]
                 ef=self.Sides['ef'][si]
@@ -854,7 +857,7 @@ class MyMesh():
                 
 
         #Final Nodal Operations
-        for n in xrange(self.NNodes):
+        for n in range(self.NNodes):
             self.NHv[n]/=(4*self.NAmix[n]) # Mean Curvature Normal Vector
             self.NH[n]=np.linalg.norm(self.NHv[n,:])*np.sign(np.dot(self.NHv[n,:],self.NNorms[n])) #Mean Curvature
             self.NK[n]=self.NAreaG[n]/self.NAmix[n] # Gaussian Curvature
@@ -883,7 +886,7 @@ class MyMesh():
             ShapeOperator=self.NSdihe
         
         minmax=[[1,2],[0,2],[0,1]]
-        for n in xrange(self.NNodes):
+        for n in range(self.NNodes):
             eigs,eigvs= np.linalg.eigh(ShapeOperator[n])
             imaxC=np.argmax(np.abs(eigs))
             izero=np.argmin(np.abs(eigs))
@@ -930,7 +933,7 @@ class MyMesh():
     def SmoothCurvatures(self,N=1):
         for i in range(N): #Smooth N times
             source=self.NSdiheS.copy()
-            for n in xrange(self.NNodes):
+            for n in range(self.NNodes):
                 isb=self.NIsB[n]
                 S=source[n]
                 if isb:
@@ -967,7 +970,7 @@ class MyMesh():
 
             if Auto_Director_Vector_Type == 0:
                 Director_Vector=np.zeros(3)
-                for n in xrange(self.NNodes):
+                for n in range(self.NNodes):
                     if not self.NIsB[n]:
                         Director_Vector+=self.NMinMag[n]
                 Director_Vector/=np.linalg.norm(Director_Vector)
@@ -976,7 +979,7 @@ class MyMesh():
             else:
                 Compute_Local_Average=True
 
-        for n in xrange(self.NNodes): # Go node-by-node to fix vector
+        for n in range(self.NNodes): # Go node-by-node to fix vector
             if not (self.NIsB[n] and Make_Zero_Boundary): #Make boundary vectors 0 if desired
                 
                 if Compute_Local_Average: #Get Local Director Vector
