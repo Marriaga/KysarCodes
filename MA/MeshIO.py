@@ -5,7 +5,7 @@ import numpy as np
 import numpy.lib.recfunctions as nprec
 import sys
 import os
-import MAPyLibs.Tools as MATL
+import MA.Tools as MATL
 import xml.dom.minidom
 
 

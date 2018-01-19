@@ -9,7 +9,7 @@ import progressbar
 import os
 from matplotlib import cm
 import matplotlib.colors as cols
-import MAPyLibs.Tools as MATL
+import MA.Tools as MATL
 
 
 
@@ -64,7 +64,7 @@ def SaveShowImage(Matrix,Root=None,Suffix=None):
 def GetRGBAImageMatrix(Name,Silent=False,**kwargs):
     ''' Get RGBA pixels from image as numpy array.''' 
     Img = Image.open(Name)
-    print("Original Image mode: " + Img.mode)
+    if not Silent: print("Original Image mode: " + Img.mode)
     if not Img.mode == 'RGBA':
         Img=Img.convert("RGBA")
         if not Silent: print("Converted to 'RGBA' Mode")
@@ -90,7 +90,7 @@ def GetImageMatrix(Name,Silent=False,**kwargs):
     
     return Mpix
 
-def OpenPILRaw(FName,dims=None,PrecBits=None):
+def OpenPILRaw(FName,dims=None,PrecBits=None,ConvertL=False):
     '''Code to open a RAW image with PIL.'''
     with open(FName, "rb") as file:
         data = file.read()
@@ -119,7 +119,9 @@ def OpenPILRaw(FName,dims=None,PrecBits=None):
         if not dims[0]*dims[1]==ds:
             raise ValueErkror("Something wrong with dimensions given")
     
-    return Image.frombytes(mode, dims, data, "raw",moderaw, 0, 1)     
+    myimg=Image.frombytes(mode, dims, data, "raw",moderaw, 0, 1)
+    if ConvertL: myimg=myimg.convert("L")
+    return myimg
     
     
 def SmoothImage(Matrix,N=1):
@@ -143,13 +145,15 @@ def SmoothImage(Matrix,N=1):
 
 # Convert 1D Image to RGBA
 def ConvertToRGB(MpixO,cmap=None,markzero=False,nf=0.001,N=1024,RGBPoints=None):
+    '''Convert 1D Image to RGBA'''
+
     Mpix=np.copy(MpixO)
     minp=np.amin(Mpix)
     maxp=np.amax(Mpix)
     if markzero: #Overides RGBPoints and cmap
         p=-minp/(maxp-minp)
         if p<0:
-            raise("Data does not contain zeros, leading to inconsistent cmap")
+            raise ValueError("Data does not contain zeros, leading to inconsistent cmap")
         RGBPoints= [[0.0       ,1,0,0], [p-nf*p    ,1,0.8,0.8], [p-nf*p,1,1,0],
                     [p+(1-p)*nf,1,1,0], [p+(1-p)*nf,0.8,0.8,1], [1.0   ,0,0,1]]
 

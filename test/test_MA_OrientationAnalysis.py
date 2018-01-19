@@ -9,18 +9,19 @@ import MA.ImageProcessing as MAIP
 import MA.Tools as MATL
  
 class T(unittest.TestCase):
-    def setUp(self):
-        self.cosimg = np.round(MAIP.MakeCosImage((5,5),ang=30,freq=2),decimals=4)
-        self.temppath = os.path.join("test","temp")
-        MATL.MakeNewDir(self.temppath)
-        self.rootpath = os.path.join(self.temppath,"Orientation")
+    @classmethod
+    def setUpClass(cls):
+        cls.cosimg = np.round(MAIP.MakeCosImage((5,5),ang=30,freq=2),decimals=4)
+        cls.temppath = os.path.join("test","temp")
+        MATL.MakeNewDir(cls.temppath)
+        cls.rootpath = os.path.join(cls.temppath,"Orientation")
         
-        self.OAnalysis = MAOA.OrientationAnalysis(
-            BaseAngFolder=self.temppath,
-            OutputRoot=self.rootpath,
+        cls.OAnalysis = MAOA.OrientationAnalysis(
+            BaseAngFolder=cls.temppath,
+            OutputRoot=cls.rootpath,
             verbose=False,
             )
-        self.OAnalysis.SetImage(self.cosimg)
+        cls.OAnalysis.SetImage(cls.cosimg)
 
 
     def test_FFT_Of_Cosimg(self):
@@ -31,8 +32,9 @@ class T(unittest.TestCase):
         Results = self.OAnalysis.ApplyGradient()
         self.assertTrue(np.round(np.mean(Results.Y),decimals=7)==0.1104972)
         
-    def tearDown(self):
-        if os.path.isdir(self.temppath): MATL.DeleteFolderTree(self.temppath)
+    @classmethod
+    def tearDownClass(cls):
+        if os.path.isdir(cls.temppath): MATL.DeleteFolderTree(cls.temppath)
 
  
 if __name__ == '__main__':

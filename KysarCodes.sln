@@ -1,0 +1,23 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27130.2020
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "KysarCodes", "KysarCodes.pyproj", "{A74256CC-26AB-4F25-9E59-B890FA6D3169}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A74256CC-26AB-4F25-9E59-B890FA6D3169}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A74256CC-26AB-4F25-9E59-B890FA6D3169}.Release|Any CPU.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {56F52C27-4DBF-41A0-8FE9-CF3D3D0DE955}
+	EndGlobalSection
+EndGlobal

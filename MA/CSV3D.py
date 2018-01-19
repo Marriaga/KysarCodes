@@ -3,8 +3,8 @@ from __future__ import print_function
 from __future__ import absolute_import
 import numpy as np
 import os
-import MAPyLibs.ImageProcessing as MAIP
-import MAPyLibs.Tools as MATL   
+import MA.ImageProcessing as MAIP
+import MA.Tools as MATL   
 from PIL import Image
     
 def MakeNodes(npdata,Scale=(1.0,1.0,1.0)):

@@ -5,7 +5,7 @@ import numpy as np
 import os, glob
 import xml.etree.ElementTree as ET
 from PIL import Image, ImageDraw, ImageFont
-import MAPyLibs.Tools as MATL
+import MA.Tools as MATL
 import matplotlib.pyplot as plt
 
 def PlotAngles(Name,A,Is,cols):
@@ -56,41 +56,65 @@ def GetXMLAngle(file):
         return 0.0
 
     
+def ScanPoints(InputFolder,ImageExtension,ImagePrefix=None,PointsList=[(0,0)]):
+    Limg = MATL.getFiles(InputFolder,ImageExtension,ImagePrefix)
+    Lxml = MATL.getFiles(InputFolder,"xml",ImagePrefix)
 
+    #Get Angles
+    A=[]
+    for xmlf in Lxml:
+        A.append(GetXMLAngle(xmlf))
+    A.append(-180)
+
+    #Get Inensities
+    I=[]
+    for imgf in Limg:
+        I.append([])
+        for pos in PointsList:
+            I[-1].append(GetIntesity(imgf,pos))
+    I.append(I[0])           
+    I=[list(i) for i in zip(*I)]
+
+    return A,I,Limg[0]
+
+def BuildPlots(InpupFolder,OutputFolder,ImageExtension,ImagePrefix=None,PointsList=[(0,0)]):
+    """ Function that builds the Intensity vs. Angle of a sequence of registered images.
+
+    Images must be pre-registered with ImageJ by doing Plugins>Registration>Register Virtual Stack Slices,
+    making sure that the "Save Transforms" checkbox is selected and useing the same output folder for the 
+    regiostered images and the transformation xml files
     
+    Args:
+        InpupFolder (str):
+        The path to the input files, both the images and the xml files
+
+        OutputFolder (str):
+        The path to the output folder for the generated plots
+
+        ImageExtension (str):
+        The extension of the image files ("png","tiff", etc...)
+
+        ImagePrefix (str):
+        The prefix common to all images
+
+        PointsList (list of tuples):
+        Points for which to compute the intensity (default: [(0,0)])
     
-    
-    
-#Registered Virtual Stack Images with Transformation Output Folder
-SRC="C:\\Users\\Miguel\\Work\\RWM-Polarized\\2017-08-24 Polarized\\ARegLowMag"
-NAME="RWM_10X"
-Bname=os.path.join(SRC,NAME)
+    """
 
-Ltif = MATL.getFiles(SRC,"tif",NAME)
-Lxml = MATL.getFiles(SRC,"xml",NAME)
-
-posL=  [(1083,1065),(970,1127),(1053,1007),(995,1044),(988,1065)]
-cols = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00'] #http://colorbrewer2.org
-
-A=[]
-I=[]
-for tif,xml in zip(Ltif,Lxml):
-    A.append(GetXMLAngle(xml))
-    I.append([])
-    for pos in posL:
-        I[-1].append(GetIntesity(tif,pos))
-        
-A.append(-180)
-I.append(I[0])        
-              
-I=[list(i) for i in zip(*I)]
-
-PlotAngles(Bname+"_Angles",A,I,cols)
-MakeImgCirc(Bname+"_Points",Ltif[0],posL,cols)   
+    A,I,refimg = ScanPoints(InpupFolder,ImageExtension,ImagePrefix=ImagePrefix,PointsList=PointsList)
+    BaseName=os.path.join(OutputFolder,ImagePrefix)
+    ColSequence = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33','#a65628','#f781bf','#999999'] #http://colorbrewer2.org
+    cols = [ColSequence[i] for i in range(len(PointsList))]
+    PlotAngles(BaseName+"_Angles",A,I,cols)
+    MakeImgCirc(BaseName+"_Points",refimg,PointsList,cols) 
 
 
-
-
-
-
- 
+if __name__ == '__main__':
+    # Example of usage
+    InpupFolder="C:\\Users\\Miguel\\Work\\RWM-Polarized\\2017-08-24 Polarized\\ARegLowMag"
+    OutputFolder="C:\\Users\\Miguel\\Desktop\\NewOut"
+    ImageExtension="tif"
+    ImagePrefix="RWM_10X"
+    PointsList=[(1083,1065),(970,1127),(1053,1007),(995,1044),(988,1065)]
+    BuildPlots(InpupFolder,OutputFolder,ImageExtension,ImagePrefix,PointsList)

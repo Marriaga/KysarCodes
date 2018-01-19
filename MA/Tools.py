@@ -85,11 +85,9 @@ def rename(src,dest):
 def IsNew(Input,Output,Force=False):
     if Force or (Output is None) or (not os.path.isfile(Output)):
         return True
-
     IStat = os.stat(Input).st_mtime
     OStat = os.stat(Output).st_mtime
     if IStat > OStat: return True
-
     return False
 
 #Get Current Script Folder
@@ -178,32 +176,32 @@ def RunProgram(cmd,f_print=True):
 
 
 #Tic/Toc
-def Tic(p=None):
+def Tic(p=False):
+    ''' Gets current time. Returns current time. p=True also prints to screen ''' 
     t=timeit.default_timer()
-    if p is not None: print("Tic: " + str(t))
+    if p: print("Tic: " + str(t))
     return t
     
-def Tec(s=None,p=None):
-    t=timeit.default_timer()
-    if s is not None:
-        d=t-s
-    if p is not None: print("Tec: " + str(t))
-    return t
-    
-def Toc(s,p=None):
+def Toc(s,p=False):
+    ''' Gets current time and subtracts input time. Returns time difference. p=True also prints to screen ''' 
     t=timeit.default_timer()
     d=t-s
-    if p is not None: print("Toc: " + str(d))
+    if p: print("Toc: " + str(d))
     return d
     
 #Time a function
-def Timeme(funct,var,NN=10,NNN=10):
+def Timeme(funct,var,NN=10,NNN=10,show=True):
+    TotTime=0
     for i in xrange(NN):
         start =timeit.default_timer()
         for t in xrange(NNN):
             funct(*var)
         end =timeit.default_timer()
-        print(str(i)+': '+str((end - start)/NNN*1000))  
+        TimeDiff=(end - start)/NNN*1000
+        TotTime+=TimeDiff
+        if show: print(str(i)+': '+str(TimeDiff))
+    return TotTime/NN
+
         
 #Get data from CSV format to numpy matrix format
 def getMatfromCSV(fn):     
@@ -224,14 +222,12 @@ def macauley(M,p=True):
         M[M>0]=0
     return M
     
-
-    
 # Invert Dictionary
 def invidct(mydict):
     return {v: k for k, v in mydict.items()} 
 
     
-#Compute eigenvalues of 3x3 matrix    
+#Compute eigenvalues of symetric 3x3 matrix    
 def eig33s(A11,A22,A33,A12,A13,A23):
 
     p1 = A12**2 + A13**2 + A23**2
