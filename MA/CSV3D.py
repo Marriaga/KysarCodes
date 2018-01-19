@@ -88,30 +88,30 @@ def ExportPlyBinary(Nodes,file,Faces=None,Colors=None):
         fp.write(vertex.tostring())
         fp.write(faces.tostring())
 
-def MakeCSVMesh(CSVfile,**kwargs):
-    print("*Making CSV Mesh")
-    print("  - Reading .csv")
+def MakeCSVMesh(CSVfile,verbose=True,**kwargs):
+    if verbose: print("*Making CSV Mesh")
+    if verbose: print("  - Reading .csv")
     npdata=MATL.getMatfromCSV(CSVfile)
-    return MakeMPixMesh(npdata,**kwargs)
+    return MakeMPixMesh(npdata,verbose,**kwargs)
     
-def MakeMPixMesh(npdata,Scale=(1.0,1.0,1.0),ColFile=None,ColMat=None,Expfile=None):
+def MakeMPixMesh(npdata,verbose=True,Scale=(1.0,1.0,1.0),ColFile=None,ColMat=None,Expfile=None):
     if ColFile is not None:
-        print("  - Getting Image")
-        Mpix=MAIP.GetRGBAImageMatrix(ColFile).reshape(-1,4)
+        if verbose: print("  - Getting Image")
+        Mpix=MAIP.GetRGBAImageMatrix(ColFile,Silent=not verbose).reshape(-1,4)
         Colors=MakeColors(Mpix)
     elif ColMat is not None:
-        print("  - Getting Image")
+        if verbose: print("  - Getting Image")
         Colors=MakeColors(ColMat)
     else:
         Colors=None
     
-    print("  - Generating Nodes")
+    if verbose: print("  - Generating Nodes")
     Nodes=MakeNodes(npdata,Scale)
-    print("  - Generating Triangles")
+    if verbose: print("  - Generating Triangles")
     Nr,Nc= np.shape(npdata)
     Faces=MakeFaces(Nr,Nc)
     if Expfile is not None:
-        print("  - Exporting Geometry")
+        if verbose: print("  - Exporting Geometry")
         ExportPlyBinary(Nodes,Expfile,Faces,Colors)
     return Nodes,Faces,Colors    
     
@@ -122,8 +122,6 @@ def Make3DSurfaceFromHeightMapTiff(File):
     xres,yres = myimg.info['resolution']
     Mpix = np.copy(np.asarray(myimg))
     return MakeMPixMesh(Mpix,Scale=(1/xres,1/yres,1.0),Expfile=outfile)   
-    
-    
     
     
 if __name__ == "__main__":

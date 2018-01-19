@@ -74,7 +74,6 @@ def ScanPoints(InputFolder,ImageExtension,ImagePrefix=None,PointsList=[(0,0)]):
             I[-1].append(GetIntesity(imgf,pos))
     I.append(I[0])           
     I=[list(i) for i in zip(*I)]
-
     return A,I,Limg[0]
 
 def BuildPlots(InpupFolder,OutputFolder,ImageExtension,ImagePrefix=None,PointsList=[(0,0)]):

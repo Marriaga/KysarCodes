@@ -95,7 +95,13 @@ def GetHome():
     scriptf = os.path.abspath(inspect.stack()[-1][1])
     return os.path.dirname(scriptf)
 
-
+#Gets the binary representation of a file as text
+def GetBinRepr(InpFile,OutFile=None):
+    with open(InpFile,"rb") as fp: A=repr(fp.read())
+    if OutFile is not None:
+        with open(OutFile,"w+") as fp: fp.write(A)
+    else:
+        print(A)
 
 ### MATPLOTLIB ###
 

@@ -56,6 +56,7 @@
     <Compile Include="setup.py" />
     <Compile Include="test\test_MA_ImageProcessing.py" />
     <Compile Include="test\test_MA_OrientationAnalysis.py" />
+    <Compile Include="test\test_MA_CSV3D.py" />
     <Compile Include="test\test_MA_PolarizedAngleAnalysis.py" />
     <Compile Include="test\test_MA_Tools.py" />
     <Compile Include="test\__init__.py" />
