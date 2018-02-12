@@ -238,25 +238,9 @@ def ApplyRotationAndTranslation(Coords,rV,tV):
     RM = getRotationMatrix(rV)
     return np.dot(Coords,np.transpose(RM))+tV
 
-def MatToCoords_old(mat,sx=1.0,sy=1.0,sz=1.0,center=False,GetZero=False):
-    M,N=mat.shape
-    if center:
-        dx,dy=M/2,N/2
-    else:
-        dx,dy=0,0
-
-    B1, B0 = np.meshgrid(range(N), range(M))
-    B0=(B0-dx)*sx
-    B1=(B1-dy)*sy
-
-    Coords=np.dstack((B0, B1, mat*sz))
-
-    if GetZero:
-        return Coords,mat<=0
-    else:
-        return Coords
-
 def MatToCoords(mat,sx=1.0,sy=1.0,sz=1.0):
+    '''Convert image matrix to active coordinates
+    '''
     # Get Shape of Array (image)
     M,N=mat.shape
     # Use coordinates wrt center
@@ -269,53 +253,6 @@ def MatToCoords(mat,sx=1.0,sy=1.0,sz=1.0):
     Coords=np.dstack((B0, B1, mat*sz))
     # Return non-zero coordinates
     return Coords[mat>0]
-
-
-def CoordsToMat_old(Coords,center=True,resc=True,ZI=None):
-    '''Convert points in "Coordinate" to matrix form.
-
-    Input: Coordinates matrix
-    Optional Input:
-       - center (True/False): Coordinates are relative to center of matrix instead of 0,0 point
-       - resc (True/False): Make all points fit into the matrix by rescaling x,y
-       - ZI (List of indices): Identifies all indices that are "Backgound" and will have a value of 0
-    '''
-    M,N,_=Coords.shape
-    Mat=np.zeros((M,N))
-    X=Coords[:,:,0].copy()
-    Y=Coords[:,:,1].copy()
-    Z=Coords[:,:,2].copy()
-    
-    #Fit all image in image frame
-    if resc==True:
-        xmin,xmax=np.amin(X),np.amax(X)
-        ymin,ymax=np.amin(Y),np.amax(Y)
-        X-=xmin
-        Y-=ymin
-        X*=((M-1)/(xmax-xmin))
-        Y*=((N-1)/(ymax-ymin))
-
-    if center:
-        X+=M/2
-        Y+=N/2
-
-    #Convert indexes to integers
-    X=np.around(X).astype(np.int32)
-    Y=np.around(Y).astype(np.int32)
-
-    #Fix out of bounds
-    IX=np.logical_and(X>=0,X<M)
-    IY=np.logical_and(Y>=0,Y<N)
-    II=np.logical_and(IX,IY)
-
-    #Fix Background Zs
-    if ZI is not None:
-        Z[ZI]=0
-
-    #Make image
-    Mat[X[II],Y[II]]=Z[II]
-
-    return Mat
 
 def CoordsToMat(Coords,MN):
     '''Convert points in "Coordinate" to matrix form.
@@ -355,54 +292,21 @@ def ComputeHorizontalAngle(A,B):
     bx,by,bz=B/norm(B)
     return -np.arctan2(ax*by-bx*ay,ax*bx+ay*by)
 
-def GetInitialization(MRef,MNew):
-    ''' Get Initialization of comparison of two membranes.
-
-    Input: numpy format of reference image and new image
-    Output: Initial rotation angles and translation vector
-    '''
-
-    #Get Coordinate Arrays
-    CRef,ZIRef=MatToCoords(MRef,center=True,GetZero=True)
-    CNew,ZINew=MatToCoords(MNew,center=True,GetZero=True)
-    
-    #Get Active Points
-    active_Ref=CRef[np.logical_not(ZIRef)]
-    active_New=CNew[np.logical_not(ZINew)]
-
-    # Estimate Center of Membranes
-    O_Ref=np.average(active_Ref,axis=0)
-    O_New=np.average(active_New,axis=0)
-    
-    # Estimate Highest point of Membranes
-    M_Ref=active_Ref[np.argmax(active_Ref[:,2])]
-    M_New=active_New[np.argmax(active_New[:,2])]
-
-    # Estimate Relative rotation between two membranes
-    r0=[ComputeHorizontalAngle(M_New-O_New,M_Ref-O_Ref),0,0]
-    # Estimate Relative displacement between two membranes
-    t0=O_Ref-ApplyRotationAndTranslation(O_New,r0,[0,0,0])
-    
-    return r0,t0
-
-def GetInitialization2(CRef,CNew):
+def GetInitialization(CRef,CNew):
     ''' Get Initialization of comparison of two membranes.
 
     Input: coordinate format of active points
     Optional Input: ZIRef,ZINew (List of indices): Identifies all indices that are "Backgound"
     Output: Initial rotation angles and translation vector
     '''
-    
-    print("A")
+
     # Estimate Center of Membranes
     O_Ref=np.average(CRef,axis=0)
     O_New=np.average(CNew,axis=0)
-    print("A")
     
     # Estimate Highest point of Membranes
     M_Ref=CRef[np.argmax(CRef[:,2])]
     M_New=CNew[np.argmax(CNew[:,2])]
-    print("A")
 
     # Estimate Relative rotation between two membranes
     r0=[ComputeHorizontalAngle(M_New-O_New,M_Ref-O_Ref),0,0]
