@@ -16,7 +16,7 @@ import MA.Tools as MATL
 
 # === Conversion between formats of Matrices
 def Image2np(Mpix):
-    '''Convert image/matrix index style from  to numpy.'''
+    '''Convert image/matrix index style from Image to numpy.'''
     return np.transpose(np.flipud(Mpix))
 
 def np2Image(Mpix):
@@ -50,6 +50,12 @@ def SaveImage(Matrix,Name,resc=False):
     if resc:
         Matrix=Rescale8bit(Matrix)
     Image.fromarray(np.uint8(Matrix),mode="L").save(Name,"png")    
+
+def SaveImageRaw(Matrix,Name):
+    '''Save pixel data in matrix as 32-bit float on a file.'''
+    Name=MATL.FixName(Name,'.tiff')
+    Image.fromarray(np.float32(Matrix),mode="F").save(Name,"TIFF")   
+
 
 # === Save/Show Images    
 def SaveShowImage(Matrix,Root=None,Suffix=None):
@@ -206,8 +212,213 @@ def Rescale8bit(Matrix):
     return np.uint8((Matrix-min)/(max-min)*255+0.5)  
 
         
+
+# TRANSFORMATIONS
+
+def getSingleRotationMatrix(ang,posone):
+    '''
+    Makes a 3x3 matrix where the posone position has a 1 in the diagonal
+    and the remaining two positions have a [[c,s],[-s,c]] matrix
+    '''
+    c, s = np.cos(ang), np.sin(ang)
+    M=np.eye(3)
+    indx=[0,1,2]
+    indx.remove(posone)
+    M[np.ix_(indx,indx)]=np.array([[c,s],[-s,c]])
+    return M
+
+def getRotationMatrix(rV):
+    phi,theta,psi = rV
+    A=getSingleRotationMatrix(phi,2)
+    B=getSingleRotationMatrix(theta,0)
+    C=getSingleRotationMatrix(psi,2)
+    return np.matmul(C,np.matmul(B,A))
+
+def ApplyRotationAndTranslation(Coords,rV,tV):
+    RM = getRotationMatrix(rV)
+    return np.dot(Coords,np.transpose(RM))+tV
+
+def MatToCoords_old(mat,sx=1.0,sy=1.0,sz=1.0,center=False,GetZero=False):
+    M,N=mat.shape
+    if center:
+        dx,dy=M/2,N/2
+    else:
+        dx,dy=0,0
+
+    B1, B0 = np.meshgrid(range(N), range(M))
+    B0=(B0-dx)*sx
+    B1=(B1-dy)*sy
+
+    Coords=np.dstack((B0, B1, mat*sz))
+
+    if GetZero:
+        return Coords,mat<=0
+    else:
+        return Coords
+
+def MatToCoords(mat,sx=1.0,sy=1.0,sz=1.0):
+    # Get Shape of Array (image)
+    M,N=mat.shape
+    # Use coordinates wrt center
+    dx,dy=M/2,N/2
+    # Compute values of x and y
+    B1, B0 = np.meshgrid(range(N), range(M))
+    B0=(B0-dx)*sx
+    B1=(B1-dy)*sy
+    # Make coordinates
+    Coords=np.dstack((B0, B1, mat*sz))
+    # Return non-zero coordinates
+    return Coords[mat>0]
+
+
+def CoordsToMat_old(Coords,center=True,resc=True,ZI=None):
+    '''Convert points in "Coordinate" to matrix form.
+
+    Input: Coordinates matrix
+    Optional Input:
+       - center (True/False): Coordinates are relative to center of matrix instead of 0,0 point
+       - resc (True/False): Make all points fit into the matrix by rescaling x,y
+       - ZI (List of indices): Identifies all indices that are "Backgound" and will have a value of 0
+    '''
+    M,N,_=Coords.shape
+    Mat=np.zeros((M,N))
+    X=Coords[:,:,0].copy()
+    Y=Coords[:,:,1].copy()
+    Z=Coords[:,:,2].copy()
+    
+    #Fit all image in image frame
+    if resc==True:
+        xmin,xmax=np.amin(X),np.amax(X)
+        ymin,ymax=np.amin(Y),np.amax(Y)
+        X-=xmin
+        Y-=ymin
+        X*=((M-1)/(xmax-xmin))
+        Y*=((N-1)/(ymax-ymin))
+
+    if center:
+        X+=M/2
+        Y+=N/2
+
+    #Convert indexes to integers
+    X=np.around(X).astype(np.int32)
+    Y=np.around(Y).astype(np.int32)
+
+    #Fix out of bounds
+    IX=np.logical_and(X>=0,X<M)
+    IY=np.logical_and(Y>=0,Y<N)
+    II=np.logical_and(IX,IY)
+
+    #Fix Background Zs
+    if ZI is not None:
+        Z[ZI]=0
+
+    #Make image
+    Mat[X[II],Y[II]]=Z[II]
+
+    return Mat
+
+def CoordsToMat(Coords,MN):
+    '''Convert points in "Coordinate" to matrix form.
+
+    Input: Coordinates matrix
+           MN - Shape of output matrix
+    '''
+    M,N=MN
+    Mat=np.zeros((M,N))
+    X=Coords[:,0].copy()
+    Y=Coords[:,1].copy()
+    Z=Coords[:,2].copy()
+
+    # Center the image
+    X+=M/2
+    Y+=N/2
+
+    #Convert indexes to integers
+    X=np.around(X).astype(np.int32)
+    Y=np.around(Y).astype(np.int32)
+
+    #Fix out of bounds
+    IX=np.logical_and(X>=0,X<M)
+    IY=np.logical_and(Y>=0,Y<N)
+    II=np.logical_and(IX,IY)
+
+    #Make image
+    Mat[X[II],Y[II]]=Z[II]
+
+    return Mat
+
+def ComputeHorizontalAngle(A,B):
+    '''Compute angle in xy plane between two vectors
+    '''
+    norm=np.linalg.norm
+    ax,ay,az=A/norm(A)
+    bx,by,bz=B/norm(B)
+    return -np.arctan2(ax*by-bx*ay,ax*bx+ay*by)
+
+def GetInitialization(MRef,MNew):
+    ''' Get Initialization of comparison of two membranes.
+
+    Input: numpy format of reference image and new image
+    Output: Initial rotation angles and translation vector
+    '''
+
+    #Get Coordinate Arrays
+    CRef,ZIRef=MatToCoords(MRef,center=True,GetZero=True)
+    CNew,ZINew=MatToCoords(MNew,center=True,GetZero=True)
+    
+    #Get Active Points
+    active_Ref=CRef[np.logical_not(ZIRef)]
+    active_New=CNew[np.logical_not(ZINew)]
+
+    # Estimate Center of Membranes
+    O_Ref=np.average(active_Ref,axis=0)
+    O_New=np.average(active_New,axis=0)
+    
+    # Estimate Highest point of Membranes
+    M_Ref=active_Ref[np.argmax(active_Ref[:,2])]
+    M_New=active_New[np.argmax(active_New[:,2])]
+
+    # Estimate Relative rotation between two membranes
+    r0=[ComputeHorizontalAngle(M_New-O_New,M_Ref-O_Ref),0,0]
+    # Estimate Relative displacement between two membranes
+    t0=O_Ref-ApplyRotationAndTranslation(O_New,r0,[0,0,0])
+    
+    return r0,t0
+
+def GetInitialization2(CRef,CNew):
+    ''' Get Initialization of comparison of two membranes.
+
+    Input: coordinate format of active points
+    Optional Input: ZIRef,ZINew (List of indices): Identifies all indices that are "Backgound"
+    Output: Initial rotation angles and translation vector
+    '''
+    
+    print("A")
+    # Estimate Center of Membranes
+    O_Ref=np.average(CRef,axis=0)
+    O_New=np.average(CNew,axis=0)
+    print("A")
+    
+    # Estimate Highest point of Membranes
+    M_Ref=CRef[np.argmax(CRef[:,2])]
+    M_New=CNew[np.argmax(CNew[:,2])]
+    print("A")
+
+    # Estimate Relative rotation between two membranes
+    r0=[ComputeHorizontalAngle(M_New-O_New,M_Ref-O_Ref),0,0]
+    # Estimate Relative displacement between two membranes
+    t0=O_Ref-ApplyRotationAndTranslation(O_New,r0,[0,0,0])
+    
+    return r0,t0
+
+
+
+
+
+
+
         
-# SPECIAL IMAGE
+# SPECIAL IMAGES
 
 # Make image with fibers given by raised cosine for ang and freq    
 def CosAng(i,j,ang=0,freq=20):
@@ -221,3 +432,57 @@ def CosAng(i,j,ang=0,freq=20):
 def MakeCosImage(MN,**kwargs):
     return np.fliplr(np.transpose(np.fromfunction(CosAng,MN,**kwargs)))
 
+# Make image of a semi-sphere
+def ShperePix(i,j,R=None):
+    M,N  = np.shape(i)
+    if R is None: R=min(M,N)/2
+    x=i-M/2
+    y=j-N/2
+    rad=R**2-x**2-y**2
+    rad[rad<0]=0
+    return np.sqrt(rad)
+
+def MakeSphereImage(MN,**kwargs):
+    return np.fliplr(np.transpose(np.fromfunction(ShperePix,MN,**kwargs)))
+
+def DistancePL(Point,Line):
+    a,b = np.array(Line)
+    p = np.moveaxis(np.array(Point), 0, -1)
+    T = np.linalg.norm(b-a)
+    n = (b-a)/T
+    pa=p-a
+    pb=p-b
+
+    A = np.dot(pa,n)
+    aa=n[np.newaxis,np.newaxis,:]*A[:,:,np.newaxis]
+
+    d=pa-aa
+    d[A<0]=pa[A<0]
+    d[A>T]=pb[A>T]
+
+    return np.linalg.norm(d,axis=2)
+
+
+def RPix(i,j,d=0.1):
+    M,N  = np.shape(i)
+    if d is None: d=0.1
+    x=2*i/(M-1)-1 # x in [-1,1]
+    y=2*j/(N-1)-1 # y in [-1,1]
+    L1=[(-3*d,-7*d),(-3*d,7*d)]
+    L2=[(-3*d,7*d),(3*d,4*d)]
+    L3=[(3*d,4*d),(-3*d,1*d)]
+    L4=[(-3*d,1*d),(3*d,-7*d)]
+    
+    D=np.ones_like(x)
+    D+=1.0
+    for Line in [L1,L2,L3,L4]:
+        D=np.minimum(D,DistancePL((x,y),Line))
+    
+    D[D>d]=d
+    V=-D**2
+    V+=d**2
+
+    return np.sqrt(V)
+
+def MakeRImage(MN,**kwargs):
+    return np2Image(np.fromfunction(RPix,MN,**kwargs))
