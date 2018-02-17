@@ -5,6 +5,8 @@ from __future__ import absolute_import
 from builtins import range
 from PIL import Image
 import numpy as np
+import scipy.optimize as spoptimize
+
 import math
 import progressbar
 import os
@@ -79,9 +81,10 @@ def GetRGBAImageMatrix(Name,Silent=False,**kwargs):
     Img.close()
     return Mpix    
     
-def GetImageMatrix(Name,Silent=False,**kwargs):
+def GetImageMatrix(Name,Silent=False,GetTiffRes=False, **kwargs):
     ''' Get 8-bit (or raw) pixels from image as numpy array.'''
-    if Name[-3:] == 'raw':
+    Ext = Name[-3:].lower()
+    if Ext == 'raw':
         Img = OpenPILRaw(Name,**kwargs)
     else:
         Img = Image.open(Name)
@@ -90,12 +93,20 @@ def GetImageMatrix(Name,Silent=False,**kwargs):
             Img=Img.convert("L")
             if not Silent: print("Converted to 'L' Mode")
 
+    if GetTiffRes and (Ext == 'tif' or Ext == 'iff'): xres,yres = Img.info['resolution']
+    
     sizes=Img.size
     #if not sizes[0]==sizes[1]: raise ValueError("Image must be a square")
     Mpix = np.copy(np.asarray(Img))
     Img.close()
     
+    if GetTiffRes:
+       if (Ext == 'tif' or Ext == 'iff'):
+           return Mpix,(xres,yres)
+       else:
+           return Mpix,None
     return Mpix
+
 
 def OpenPILRaw(FName,dims=None,PrecBits=None,ConvertL=False):
     '''Code to open a RAW image with PIL.'''
@@ -215,106 +226,653 @@ def Rescale8bit(Matrix):
 
 # TRANSFORMATIONS
 
+class CoordsObj(object):
+    def __init__(self,Coords=None,Img=None,XYScaling=None,ZScaling=None,InactiveThreshold=None):
+        self.Mat = None
+        self.XYScaling = None
+        self.MN = None
+        self.Coords = None
+        
+        if Coords is not None:
+            self.setFromCoords(Coords)
+        elif Img is not None:
+            self.setFromImg(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold)
+
+    # INITIALIZATION
+
+    def setFromImg(self,Img,XYScaling=None,ZScaling=None,InactiveThreshold=None):
+        ''' Create Coordinates object from Path or Numpy'''
+        if type(Img) == np.ndarray:
+            self.setFromMat(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold)
+        elif type(Img) == type("string"):
+            self.setFromPath(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold)
+
+    def setFromPath(self,Img,XYScaling=None,ZScaling=None,InactiveThreshold=None):
+        ''' Create Coordinates object from Image Path'''
+        Mat , ImgXYScaling = GetImageMatrix(Img,GetTiffRes=True)
+        if XYScaling is None: XYScaling=ImgXYScaling
+        self.setFromMat(Mat,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold)
+
+    def setFromMat(self,Mat,XYScaling=None,ZScaling=None,InactiveThreshold=None):
+        ''' Create Coordinates object from Matrix (image)'''
+        self.Mat = Mat
+        if ZScaling is not None: self.Mat*=ZScaling
+        self.XYScaling=XYScaling
+        if self.XYScaling is None: self.XYScaling = (1.0,1.0)
+        self.MN=Mat.shape
+        self.Coords=self.MatToCoords(InactiveThreshold=InactiveThreshold)
+
+    def resetFromCoords(self,Coords):
+        ''' Same as setFromCoords but also resets MN and XYScaling'''
+        self.Mat = None
+        self.XYScaling = None
+        self.MN = None
+        self.Coords = Coords
+
+    def setFromCoords(self,Coords):
+        ''' Create Coordinates object from Coordinates. Note that MN and XYScaling remain the same as before'''
+        self.Mat = None
+        self.Coords = Coords
+
+    def fixXYScaling(self,XYScaling=None):
+        if XYScaling is not None: self.XYScaling = XYScaling # Overide with new XYScale
+        if self.XYScaling is None: self.XYScaling = (1.0,1.0) # Use Default XYScale
+
+    def fixMN(self,MN=None):
+        if MN is not None: self.MN = MN # Overide with new MN
+        if self.MN is None: self.setFittedMN() # Use Default MN
+
+    def setFittedMN(self):
+        M=(np.amax(self.Coords[:,0])-np.amin(self.Coords[:,0]))/self.XYScaling[0]
+        N=(np.amax(self.Coords[:,1])-np.amin(self.Coords[:,1]))/self.XYScaling[1]
+        self.MN = (M,N)
+
+    def fitDim(self,CoordObjInstance):
+        self.XYScaling = CoordObjInstance.XYScaling
+        self.MN = CoordObjInstance.MN
+
+    def computeMat(self,MN=None,XYScaling=None):
+        ''' Computes matrix from coordinates '''
+        self.fixXYScaling(XYScaling)
+        self.fixMN(MN)
+        self.Mat = self.CoordsToMat()
+
+    # GET DATA
+
+    def getCoords(self):
+        ''' Gets Coordinates '''
+        return self.Coords
+
+    def getMat(self,MN=None,XYScaling=None):
+        ''' Gets Matrix'''
+        if (self.Mat is None) or (MN != self.MN) or (XYScaling != self.XYScaling):
+            self.computeMat(MN=MN,XYScaling=XYScaling)
+        return self.Mat
+        
+    def getIJ(self,R=None,T=None):
+        if R is None: R=np.array([0,0,0])
+        if T is None: T=np.array([0,0,0])
+
+        NewCoords = self.ApplyRotationAndTranslation(self.Coords,R,T)
+
+        M,N=self.MN
+        sx,sy = self.XYScaling
+        IJ=np.zeros((NewCoords.shape[0],2))
+        X=IJ[:,0]
+        Y=IJ[:,1]
+        X[:]=NewCoords[:,0].copy()
+        Y[:]=NewCoords[:,1].copy()
+        Z=NewCoords[:,2].copy()
+
+        #Scale Image
+        X/=sx
+        Y/=sy
+
+        # Center the image
+        X+=M/2
+        Y+=N/2
+
+        #Fix out of bounds
+        IX=np.logical_and(X>=0,X<=M-1)
+        IY=np.logical_and(Y>=0,Y<=N-1)
+        II=np.logical_and(IX,IY)
+    
+        return IJ[II],Z[II]
+
+    # STATIC METHODS FOR COORD TRANSFORMATION
+
+    @staticmethod
+    def getSingleRotationMatrix(ang,posone):
+        '''
+        Makes a 3x3 matrix where the posone position has a 1 in the diagonal
+        and the remaining two positions have a [[c,s],[-s,c]] matrix
+        '''
+        c, s = np.cos(ang), np.sin(ang)
+        M=np.eye(3)
+        indx=[0,1,2]
+        indx.remove(posone)
+        M[np.ix_(indx,indx)]=np.array([[c,-s],[s,c]])
+        return M
+    
+    @classmethod
+    def getRotationMatrix(cls,rV):
+        ''' Get Rotation matrix after providing the 3 angles (phi,theta,psi) '''
+        phi,theta,psi = rV
+        A=cls.getSingleRotationMatrix(phi,0)
+        B=cls.getSingleRotationMatrix(-theta,1)
+        C=cls.getSingleRotationMatrix(psi,2)
+        return np.matmul(C,np.matmul(B,A))
+    
+    @classmethod
+    def ApplyRotationAndTranslation(cls,Coords,rV,tV):
+        ''' Returns the Coords after being transformed '''
+        RM = cls.getRotationMatrix(rV)
+        return np.dot(Coords,np.transpose(RM))+tV
+
+
+    # CONVERSION
+
+    def MatToCoords(self,InactiveThreshold=None):
+        '''Convert image matrix to active coordinates
+
+        Optional: InactiveThreshold (float) - Values less or equal to this threshold are considered inactive
+        Output: Array of [x,y,z] 
+        '''
+        sx,sy=self.XYScaling
+        # Get Shape of Array (image)
+        M,N=self.MN
+        # Use coordinates wrt center
+        dx,dy=M/2,N/2
+        # Compute values of x and y
+        B1, B0 = np.meshgrid(range(N), range(M))
+        B0=(B0-dx)*sx
+        B1=(B1-dy)*sy
+        # Make coordinates
+        Coords=np.dstack((B0, B1, self.Mat))
+        # Return active coordinates
+        if InactiveThreshold is None:
+            return Coords[self.Mat==self.Mat]
+        else:
+            return Coords[self.Mat>InactiveThreshold]
+
+    def CoordsToMat(self):
+        '''Convert points in "Coordinate" form to matrix form.
+        '''
+        Mat=np.zeros(self.MN)
+        IJ,Z=self.getIJ()
+        IJ=np.round(IJ).astype(np.int32)
+
+        Mat[IJ[:,0],IJ[:,1]]=Z[:]
+
+        return Mat
+
+
+class ImageFit(object):
+    def __init__(self, RefImage, **kwargs):
+        '''Class to find the transformation that fits
+           an image to a reference image.
+
+        Input: RefImage - Image (String-Path, ndarray-Matrix)
+        Optional: XYScaling - dimensions/pixel of image (sx,sy)
+                   ZScaling - Factor to scale the pixel values (z)
+        '''
+
+        self.CReference = CoordsObj(Img=RefImage, **kwargs)
+
+        self.CImage = CoordsObj()
+        self.CImage.fitDim(self.CReference)
+
+
+    def FitNewImage(self,Image, **kwargs):
+        ''' Load an image and fit it to the Reference Image
+
+        Input: Image to fit - Image (String-Path, ndarray-Matrix)
+        Optional: XYScaling (scalar,scalar) - Tuple with the scaling (dimension/pixel) of the X and Y directions
+                  ZScaling (scalar) - Scalar with the scaling for the pixel value corresponding to the Z direction
+                  InactiveThreshold (scalar) - Scalar with the Z value below which the pixel will be ignored
+        '''
+        self.CImage = CoordsObj(Img=Image, **kwargs)
+        self.CImage.fitDim(self.CReference)
+        self.Solve()
+
+    def FitNewCoords(self,Coords):
+        ''' Fit Coords to the Reference Image
+
+        Input: Image to fit - Image (String-Path, ndarray-Matrix)
+        Optional: XYScaling (scalar,scalar) - Tuple with the scaling (dimension/pixel) of the X and Y directions
+                  ZScaling (scalar) - Scalar with the scaling for the pixel value corresponding to the Z direction
+                  InactiveThreshold (scalar) - Scalar with the Z value below which the pixel will be ignored
+        '''
+        self.CImage.setFromCoords(Coords)
+        self.Solve()
+
+
+    
+    # SOLVING
+
+    def Solve(self):
+        # Get initialization parameters 
+        self.RT0a = self.getRTarr(self.GetInitialization())
+
+        print("Gradient Descent Result: ",self.GradientDescent(self.RT0a))
+
+
+
+    def GetInitialization(self):
+        ''' Get Initialization of comparison of two membranes.
+
+        Input: Coordinate format of active points
+        Output: Initial rotation angles and translation vector
+        '''
+
+        CRef = self.CReference.getCoords()
+        CNew = self.CImage.getCoords()
+
+        # Estimate Center of Membranes
+        O_Ref=np.average(CRef,axis=0)
+        O_New=np.average(CNew,axis=0)
+    
+        # Estimate Highest point of Membranes
+        M_Ref=CRef[np.argmax(CRef[:,2])]
+        M_New=CNew[np.argmax(CNew[:,2])]
+
+        # Estimate Relative rotation between two membranes
+        r0=[0,0,-self.ComputeHorizontalAngle(M_New-O_New,M_Ref-O_Ref)]
+        # Estimate Relative displacement between two membranes
+        t0=O_Ref-CoordsObj.ApplyRotationAndTranslation(O_New,r0,[0,0,0])
+    
+        return r0,t0
+
+    # METHODS
+
+    @staticmethod
+    def ComputeHorizontalAngle(A,B):
+        '''Compute angle in xy plane between two vectors
+        '''
+        ax,ay,az=A/np.linalg.norm(A)
+        bx,by,bz=B/np.linalg.norm(B)
+        return -np.arctan2(ax*by-bx*ay,ax*bx+ay*by)
+
+    @staticmethod
+    def getRTtup(X):
+        return X[0:3],X[3:6]
+    
+    @staticmethod
+    def getRTarr(tup):
+        return np.concatenate(tup)
+
+    def CostFunction(self,RT):
+
+        R,T=self.getRTtup(RT)
+        IJNew,ZNew = self.CImage.getIJ(R,T)
+    
+        IJi=np.floor(IJNew).astype(np.int32)
+        IJf=np.ceil(IJNew).astype(np.int32)
+        alf=(IJNew-IJi)/(IJf-IJi)
+        Zii=self.CReference.Mat[IJi[:,0],IJi[:,1]]
+        Zif=self.CReference.Mat[IJi[:,0],IJf[:,1]]
+        Zfi=self.CReference.Mat[IJf[:,0],IJi[:,1]]
+        Zff=self.CReference.Mat[IJf[:,0],IJf[:,1]]
+
+        Zai=Zfi*alf[:,0]-Zii*(alf[:,0]-1)
+        Zaf=Zff*alf[:,0]-Zif*(alf[:,0]-1)
+        Zab=Zaf*alf[:,1]-Zai*(alf[:,1]-1)
+
+        DZ=ZNew-Zab
+        DZ=DZ**2
+        return np.sum(DZ)
+
+    def ComputeGradientCost(self,RT):
+        R,T=self.getRTtup(RT)
+        LR,LT = len(R),len(T)
+
+        Cost0 = self.CostFunction(RT)
+    
+        DR=1E-8
+        DT=1E-8
+        GradientR = np.zeros(LR)
+        GradientT = np.zeros(LT)
+
+        #Rotations Gradient
+        for i in range(LR):
+            deltaR = np.zeros(LR)
+            deltaR[i] = DR
+            NRT=self.getRTarr((R+deltaR,T))
+            CostNew = self.CostFunction(NRT)
+            GradientR[i] = (CostNew-Cost0)/DR
+
+        #Translations Gradient
+        for i in range(LT):
+            deltaT = np.zeros(LT)
+            deltaT[i] = DT
+            NRT=self.getRTarr((R,T+deltaT))
+            CostNew = self.CostFunction(NRT)
+            GradientT[i] = (CostNew-Cost0)/DT
+
+        return self.getRTarr((GradientR,GradientT))
+
+    def GradientDescent(self,RTin):
+        GammaR=1E-10
+        GammaT=1E-10
+        Rin,Tin = self.getRTtup(RTin)
+        mylist=np.array([[15,35],[45,35],[80,35],[30,65],[85,65]])
+
+        R,T=np.array(Rin),np.array(Tin)
+        R_old,T_old=R.copy(),T.copy()
+        LR,LT = len(R),len(T)
+        GR,GT = np.zeros(LR),np.zeros(LT)
+        GR_old,GT_old = np.zeros(LR),np.zeros(LT)
+
+        print("\n\n\n\n\n")
+        Cost_new = self.CostFunction(self.getRTarr((R,T)))
+     
+        for i in range(200):
+            GR_old,GT_old=GR,GT
+            GR,GT = self.getRTtup(self.ComputeGradientCost(self.getRTarr((R,T))))
+
+            if i>0:
+                dr,dgr=R-R_old,GR-GR_old
+                denR=np.dot(dgr,dgr)
+                GammaR = max(np.dot(dr,dgr)/denR,1E-17)
+                GammaR = np.dot(dr,dgr)/denR
+
+                dt,dgt=T-T_old,GT-GT_old
+                denT=np.dot(dgt,dgt)
+                GammaT = max(np.dot(dt,dgt)/denT,1E-17)
+                GammaT = np.dot(dt,dgt)/denT
+
+                Gamma=((np.dot(dr,dgr)+np.dot(dt,dgt))/(denR+denT))
+                GammaR=Gamma
+                GammaT=Gamma
+                #print(GammaR,GammaT)
+
+
+            R_old,T_old=R,T
+
+            R=R-GammaR*GR
+            T=T-GammaT*GT
+            #print(R,T)
+            Cost_old=Cost_new
+            Cost_new=self.CostFunction(self.getRTarr((R,T)))
+            print(Cost_old-Cost_new)
+
+        print(" ")
+        NewCoords= CoordsObj.ApplyRotationAndTranslation(self.CImage.Coords,R,T)
+        self.CImage.setFromCoords(NewCoords)
+        NewMat=self.CImage.getMat()
+        print("Result",NewMat[mylist[:,0],mylist[:,1]])
+
+        return R,T
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def getSingleRotationMatrix(ang,posone):
-    '''
-    Makes a 3x3 matrix where the posone position has a 1 in the diagonal
-    and the remaining two positions have a [[c,s],[-s,c]] matrix
-    '''
-    c, s = np.cos(ang), np.sin(ang)
-    M=np.eye(3)
-    indx=[0,1,2]
-    indx.remove(posone)
-    M[np.ix_(indx,indx)]=np.array([[c,s],[-s,c]])
-    return M
+   '''
+   Makes a 3x3 matrix where the posone position has a 1 in the diagonal
+   and the remaining two positions have a [[c,s],[-s,c]] matrix
+   '''
+   c, s = np.cos(ang), np.sin(ang)
+   M=np.eye(3)
+   indx=[0,1,2]
+   indx.remove(posone)
+   M[np.ix_(indx,indx)]=np.array([[c,-s],[s,c]])
+   return M
 
 def getRotationMatrix(rV):
-    phi,theta,psi = rV
-    A=getSingleRotationMatrix(phi,2)
-    B=getSingleRotationMatrix(theta,0)
-    C=getSingleRotationMatrix(psi,2)
-    return np.matmul(C,np.matmul(B,A))
+   phi,theta,psi = rV
+   A=getSingleRotationMatrix(phi,0)
+   B=getSingleRotationMatrix(-theta,1)
+   C=getSingleRotationMatrix(psi,2)
+   return np.matmul(C,np.matmul(B,A))
 
 def ApplyRotationAndTranslation(Coords,rV,tV):
-    RM = getRotationMatrix(rV)
-    return np.dot(Coords,np.transpose(RM))+tV
+   RM = getRotationMatrix(rV)
+   return np.dot(Coords,np.transpose(RM))+tV
 
-def MatToCoords(mat,sx=1.0,sy=1.0,sz=1.0):
-    '''Convert image matrix to active coordinates
-    '''
-    # Get Shape of Array (image)
-    M,N=mat.shape
-    # Use coordinates wrt center
-    dx,dy=M/2,N/2
-    # Compute values of x and y
-    B1, B0 = np.meshgrid(range(N), range(M))
-    B0=(B0-dx)*sx
-    B1=(B1-dy)*sy
-    # Make coordinates
-    Coords=np.dstack((B0, B1, mat*sz))
-    # Return non-zero coordinates
-    return Coords[mat>0]
+def MatToCoords(mat,XYScaling=(1.0,1.0),ZScaling=1.0):
+   '''Convert image matrix to active coordinates
 
-def CoordsToMat(Coords,MN):
-    '''Convert points in "Coordinate" to matrix form.
+   Input: mat- matrix of image
+   Optional: XYScaling - dimension/pixel of image
+             ZScaling - factor to scale z values
+   Output: Array of [x,y,z] 
+   '''
+   sx,sy=XYScaling
+   sz=ZScaling
+   # Get Shape of Array (image)
+   M,N=mat.shape
+   # Use coordinates wrt center
+   dx,dy=M/2,N/2
+   # Compute values of x and y
+   B1, B0 = np.meshgrid(range(N), range(M))
+   B0=(B0-dx)*sx
+   B1=(B1-dy)*sy
+   # Make coordinates
+   Coords=np.dstack((B0, B1, mat*sz))
+   # Return non-zero coordinates
+   return Coords[mat>0]
 
-    Input: Coordinates matrix
-           MN - Shape of output matrix
-    '''
-    M,N=MN
-    Mat=np.zeros((M,N))
-    X=Coords[:,0].copy()
-    Y=Coords[:,1].copy()
-    Z=Coords[:,2].copy()
+#def IndividualCoordToMat(C,MN):
+#    x,y,z=C
+#    M,N=MN
+#    i=np.around(x+M).astype(np.int32)
+#    j=np.around(y+N).astype(np.int32)
+#    if i>=0 and i<M and j>=0 and j<N:
+#        return i,j,z
 
-    # Center the image
-    X+=M/2
-    Y+=N/2
+def GetIJfromCoords(Coords,MN,XYScaling=(1.0,1.0)):
+   M,N=MN
+   sx,sy = XYScaling
+   IJ=np.zeros((Coords.shape[0],2))
+   X=IJ[:,0]
+   Y=IJ[:,1]
+   X[:]=Coords[:,0].copy()
+   Y[:]=Coords[:,1].copy()
+   Z=Coords[:,2].copy()
 
-    #Convert indexes to integers
-    X=np.around(X).astype(np.int32)
-    Y=np.around(Y).astype(np.int32)
+   #Scale Image
+   X/=sx
+   Y/=sy
 
-    #Fix out of bounds
-    IX=np.logical_and(X>=0,X<M)
-    IY=np.logical_and(Y>=0,Y<N)
-    II=np.logical_and(IX,IY)
+   # Center the image
+   X+=M/2
+   Y+=N/2
 
-    #Make image
-    Mat[X[II],Y[II]]=Z[II]
+   ##Convert indexes to integers
+   #X[:]=np.around(X)
+   #Y[:]=np.around(Y)
 
-    return Mat
+   #Fix out of bounds
+   IX=np.logical_and(X>=0,X<=M-1)
+   IY=np.logical_and(Y>=0,Y<=N-1)
+   II=np.logical_and(IX,IY)
+    
+   #return IJ[II].astype(np.int32),Z[II]
+   return IJ[II],Z[II]
+
+def CoordsToMat(Coords,MN,XYScaling=(1.0,1.0)):
+   '''Convert points in "Coordinate" form to matrix form.
+
+   Input: Coordinates matrix
+          MN - Shape of output matrix
+   Optional: XYScaling Dimension/pixel in X and Y
+   '''
+   M,N=MN
+   Mat=np.zeros((M,N))
+   IJ,Z=GetIJfromCoords(Coords,MN,XYScaling=XYScaling)
+   IJ=np.round(IJ).astype(np.int32)
+
+   Mat[IJ[:,0],IJ[:,1]]=Z[:]
+
+   return Mat
 
 def ComputeHorizontalAngle(A,B):
-    '''Compute angle in xy plane between two vectors
-    '''
-    norm=np.linalg.norm
-    ax,ay,az=A/norm(A)
-    bx,by,bz=B/norm(B)
-    return -np.arctan2(ax*by-bx*ay,ax*bx+ay*by)
+   '''Compute angle in xy plane between two vectors
+   '''
+   norm=np.linalg.norm
+   ax,ay,az=A/norm(A)
+   bx,by,bz=B/norm(B)
+   return -np.arctan2(ax*by-bx*ay,ax*bx+ay*by)
 
 def GetInitialization(CRef,CNew):
-    ''' Get Initialization of comparison of two membranes.
+   ''' Get Initialization of comparison of two membranes.
 
-    Input: coordinate format of active points
-    Optional Input: ZIRef,ZINew (List of indices): Identifies all indices that are "Backgound"
-    Output: Initial rotation angles and translation vector
-    '''
+   Input: coordinate format of active points
+   Optional Input: ZIRef,ZINew (List of indices): Identifies all indices that are "Backgound"
+   Output: Initial rotation angles and translation vector
+   '''
 
-    # Estimate Center of Membranes
-    O_Ref=np.average(CRef,axis=0)
-    O_New=np.average(CNew,axis=0)
+   # Estimate Center of Membranes
+   O_Ref=np.average(CRef,axis=0)
+   O_New=np.average(CNew,axis=0)
     
-    # Estimate Highest point of Membranes
-    M_Ref=CRef[np.argmax(CRef[:,2])]
-    M_New=CNew[np.argmax(CNew[:,2])]
+   # Estimate Highest point of Membranes
+   M_Ref=CRef[np.argmax(CRef[:,2])]
+   M_New=CNew[np.argmax(CNew[:,2])]
 
-    # Estimate Relative rotation between two membranes
-    r0=[ComputeHorizontalAngle(M_New-O_New,M_Ref-O_Ref),0,0]
-    # Estimate Relative displacement between two membranes
-    t0=O_Ref-ApplyRotationAndTranslation(O_New,r0,[0,0,0])
+   # Estimate Relative rotation between two membranes
+   r0=[0,0,-ComputeHorizontalAngle(M_New-O_New,M_Ref-O_Ref)]
+   # Estimate Relative displacement between two membranes
+   t0=O_Ref-ApplyRotationAndTranslation(O_New,r0,[0,0,0])
     
-    return r0,t0
+   return r0,t0
 
+def CostCoordMat(MatRef,CBase,MN,R=[0,0,0],T=[0,0,0],XYScaling=(1.0,1.0)):
+   M,N=MN
+   Coord0 = ApplyRotationAndTranslation(CBase,R,T)
+   IJNew,ZNew = GetIJfromCoords(Coord0,MN,XYScaling=XYScaling)
+    
+   IJi=np.floor(IJNew).astype(np.int32)
+   IJf=np.ceil(IJNew).astype(np.int32)
+   alf=(IJNew-IJi)/(IJf-IJi)
+   Zii=MatRef[IJi[:,0],IJi[:,1]]
+   Zif=MatRef[IJi[:,0],IJf[:,1]]
+   Zfi=MatRef[IJf[:,0],IJi[:,1]]
+   Zff=MatRef[IJf[:,0],IJf[:,1]]
+
+   Zai=Zfi*alf[:,0]-Zii*(alf[:,0]-1)
+   Zaf=Zff*alf[:,0]-Zif*(alf[:,0]-1)
+   Zab=Zaf*alf[:,1]-Zai*(alf[:,1]-1)
+
+   DZ=ZNew-Zab
+   DZ=DZ**2
+   return np.sum(DZ)
+
+def ComputeGradientCost(MatRef,CBase,MN,R,T,XYScaling=(1.0,1.0)):
+   M,N=MN
+   LR,LT = len(R),len(T)
+   Cost0 = CostCoordMat(MatRef,CBase,MN,R,T,XYScaling)
+    
+   DR=1E-8
+   DT=1E-8
+   GradientR = np.zeros(LR)
+   GradientT = np.zeros(LT)
+
+   #Rotations Gradient
+   for i in range(LR):
+       deltaR = np.zeros(LR)
+       deltaR[i] = DR
+       CostNew = CostCoordMat(MatRef,CBase,MN,R+deltaR,T,XYScaling)
+       GradientR[i] = (CostNew-Cost0)/DR
+
+
+   #Translations Gradient
+   for i in range(LT):
+       deltaT = np.zeros(LT)
+       deltaT[i] = DT
+       CostNew = CostCoordMat(MatRef,CBase,MN,R,T+deltaT,XYScaling)
+       GradientT[i] = (CostNew-Cost0)/DT
+
+   return GradientR,GradientT
+
+
+def ScipyCostCoordMat(X,MatRef,CBase,MN,XYScaling=(1.0,1.0)):
+   R=X[0:3]
+   T=X[3:6]
+   return CostCoordMat(MatRef,CBase,MN,R=R,T=T,XYScaling=XYScaling)
+
+
+def SolveRT(MatRef,CBase,MN,Rin=[0,0,0],Tin=[0,0,0],XYScaling=(1.0,1.0)):
+   X=np.zeros(6)
+   X[0:2]=Rin[0:2]
+   X[3:5]=Tin[0:2]
+   OptResult = spoptimize.minimize(ScipyCostCoordMat,X,args=(MatRef,CBase,MN,XYScaling),options={"disp":True})
+   print(OptResult.message)
+   return OptResult.x[0:3],OptResult.x[3:6]
+
+def GradientDescent(MatRef,CBase,MN,Rin=[0,0,0],Tin=[0,0,0],XYScaling=(1.0,1.0)):
+   GammaR=1E-10
+   GammaT=1E-10
+
+   mylist=np.array([[15,35],[45,35],[80,35],[30,65],[85,65]])
+
+   R,T=np.array(Rin),np.array(Tin)
+   R_old,T_old=R.copy(),T.copy()
+   LR,LT = len(R),len(T)
+   GR,GT = np.zeros(LR),np.zeros(LT)
+   GR_old,GT_old = np.zeros(LR),np.zeros(LT)
+
+   print("\n\n\n\n\n")
+   Cost_new = CostCoordMat(MatRef,CBase,MN,R,T,XYScaling)
+     
+   for i in range(200):
+       GR_old,GT_old=GR,GT
+       GR,GT = ComputeGradientCost(MatRef,CBase,MN,R,T,XYScaling)
+
+       if i>0:
+           dr,dgr=R-R_old,GR-GR_old
+           denR=np.dot(dgr,dgr)
+           GammaR = max(np.dot(dr,dgr)/denR,1E-17)
+           GammaR = np.dot(dr,dgr)/denR
+
+           dt,dgt=T-T_old,GT-GT_old
+           denT=np.dot(dgt,dgt)
+           GammaT = max(np.dot(dt,dgt)/denT,1E-17)
+           GammaT = np.dot(dt,dgt)/denT
+
+           Gamma=((np.dot(dr,dgr)+np.dot(dt,dgt))/(denR+denT))
+           GammaR=Gamma
+           GammaT=Gamma
+           #print(GammaR,GammaT)
+
+
+       R_old,T_old=R,T
+
+       R=R-GammaR*GR
+       T=T-GammaT*GT
+       #print(R,T)
+       Cost_old=Cost_new
+       Cost_new=CostCoordMat(MatRef,CBase,MN,R,T,XYScaling)
+       print(Cost_old-Cost_new)
+
+   print(" ")
+   NewCoords=ApplyRotationAndTranslation(CBase,R,T)
+   NewMat=CoordsToMat(NewCoords,MN)
+   print("Result",NewMat[mylist[:,0],mylist[:,1]])
+
+   return R,T
+
+
+   #for i in range(6):
+        
+
+   #DZ=ZNew-MatRef[IJNew[:,0],IJNew[:,1]]
+   #DZ=DZ**2
 
 
 
