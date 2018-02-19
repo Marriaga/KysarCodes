@@ -4,15 +4,18 @@ from __future__ import absolute_import
 import unittest
 import numpy as np
 import os
+import sys
+sys.path.append("C:\\Users\\Miguel\\Dropbox\\PostDoc\\KysarCodes")
 import MA.ImageProcessing as MAIP
 import MA.Tools as MATL
  
 class T(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        print("test_MA_ImageProcessing")
         cls.cosimg = np.round(MAIP.MakeCosImage((5,5),ang=30,freq=2),decimals=4)
         cls.temppath = os.path.join("test","temp")
-        MATL.MakeNewDir(cls.temppath)
+        #MATL.MakeNewDir(cls.temppath)
         cls.testimgpath = os.path.join(cls.temppath,"MyTestImage.png")
         cls.testimgraw = os.path.join(cls.temppath,"MyTestImage.raw")
         
@@ -44,9 +47,44 @@ class T(unittest.TestCase):
         mypix=MAIP.GetImageMatrix(self.testimgraw,Silent=True,ConvertL=True)
         self.assertTrue(np.all([[255,  24,   0], [210,  73,   0], [195, 189,   0]]==mypix))
         
+    def test_ImageFit(self):
+        # Basic Image
+        RImg=MAIP.MakeRImage((50,50))
+        CO_R = MAIP.CoordsObj(Img=RImg,ZScaling=50,InactiveThreshold=0)
+
+        # Reference Image (with slight tilt for initialization)
+        AdjustedCoords = CO_R.getTransformedCoords([0,np.radians(2),0],[0,0,7])
+        # Rotated and Translated Coordinates
+        NewCoords = CO_R.getTransformedCoords([0,np.radians(3),np.radians(90)],[3.2,1.1,2.0])
+
+        # Adjust the original Coordinates to include small tilt
+        CO_R.setFromCoords(AdjustedCoords)
+        RMat = CO_R.getMat()
+
+        # Create fitting object with reference image
+        FitObj = MAIP.ImageFit(RMat,InactiveThreshold=0)
+        # Try to fit NewCoords to Reference Image
+        R,Tr = FitObj.FitNewCoords(NewCoords,silent=True)
+
+        # Check if correction angle is ~= -90 degrees
+        self.assertAlmostEqual(np.degrees(R[2]),-90.0,1)
+
+        # Check if cost function is below 2.5
+        self.assertTrue(FitObj.CostFunction(np.concatenate((R,Tr)))<2.5)
+
+        # Check if the SumSquares of the diference between certain points is almost zero
+        mylist=np.array([[8,18],[23,18],[15,33]]).astype(np.int32)
+        NewMat=FitObj.CImage.getTransformedMat(R,Tr)
+        ResObtained=NewMat[mylist[:,0],mylist[:,1]]
+        ResExpected=CO_R.getMat()[mylist[:,0],mylist[:,1]]
+        SumSquares=np.sum((ResObtained-ResExpected)**2)
+        self.assertAlmostEqual(SumSquares,0.0,1)
+        
+        
     @classmethod
     def tearDownClass(cls):
-        if os.path.isdir(cls.temppath): MATL.DeleteFolderTree(cls.temppath)
+        pass
+        #if os.path.isdir(cls.temppath): MATL.DeleteFolderTree(cls.temppath)
 
  
 if __name__ == '__main__':

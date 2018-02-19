@@ -434,7 +434,7 @@ class ImageFit(object):
         self.CImage.fitDim(self.CReference)
 
 
-    def FitNewImage(self,Image, **kwargs):
+    def FitNewImage(self,Image,silent=False, **kwargs):
         ''' Load an image and fit it to the Reference Image
 
         Input: Image to fit - Image (String-Path, ndarray-Matrix)
@@ -444,9 +444,9 @@ class ImageFit(object):
         '''
         self.CImage = CoordsObj(Img=Image, **kwargs)
         self.CImage.fitDim(self.CReference)
-        return self.Solve()
+        return self.Solve(silent=silent)
 
-    def FitNewCoords(self,Coords):
+    def FitNewCoords(self,Coords,silent=False):
         ''' Fit Coords to the Reference Image
 
         Input: Image to fit - Image (String-Path, ndarray-Matrix)
@@ -455,15 +455,15 @@ class ImageFit(object):
                   InactiveThreshold (scalar) - Scalar with the Z value below which the pixel will be ignored
         '''
         self.CImage.setFromCoords(Coords)
-        return self.Solve()
+        return self.Solve(silent=silent)
     
     # SOLVING
 
-    def Solve(self):
+    def Solve(self,silent=False):
         # Get initialization parameters
         self.RT0a = self.getRTarr(self.GetInitialization())
         # R,T = self.GradientDescent(self.RT0a)
-        R,T = self.ScipyOptimize(self.RT0a)
+        R,T = self.ScipyOptimize(self.RT0a,silent=silent)
         return R,T
 
 
@@ -606,12 +606,13 @@ class ImageFit(object):
 
         return R,T
 
-    def ScipyOptimize(self,RTin):
-        OptResult = spoptimize.minimize(self.CostFunction,RTin,jac=self.ComputeGradientCost,options={"disp":True})
+    def ScipyOptimize(self,RTin,silent=False):
+        options=None
+        if not silent: options={"disp":True}
+        OptResult = spoptimize.minimize(self.CostFunction,RTin,jac=self.ComputeGradientCost,options=options)
         # OptResult = spoptimize.minimize(self.CostFunction,RTin,options={"disp":True})
-        print(OptResult.message)
+        if not silent: print(OptResult.message)
         R,T=self.getRTtup(OptResult.x)
-
         return R,T
 
 

@@ -11,8 +11,9 @@ import MA.Tools as MATL
 class T(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        print("test_MA_CSV3D")
         cls.temppath = os.path.join("test","temp","")
-        MATL.MakeNewDir(cls.temppath)
+        #MATL.MakeNewDir(cls.temppath)
   
     def test_MakeCSVMesh(self):
         BaseName=os.path.join(self.temppath,"csv")
@@ -25,7 +26,8 @@ class T(unittest.TestCase):
  
     @classmethod
     def tearDownClass(cls):
-        if os.path.isdir(cls.temppath): MATL.DeleteFolderTree(cls.temppath)
+        pass
+        #if os.path.isdir(cls.temppath): MATL.DeleteFolderTree(cls.temppath)
 
 
 if __name__ == '__main__':

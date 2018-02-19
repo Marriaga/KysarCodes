@@ -10,8 +10,9 @@ import MA.Tools as MATL
 class T(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        print("test_MA_Tools")
         cls.temppath = os.path.join("test","temp","")
-        MATL.MakeNewDir(cls.temppath)
+        #MATL.MakeNewDir(cls.temppath)
         cls.myfile_old = MATL.MakeRoot(cls.temppath,"old")
         open(cls.myfile_old,'w+').close()
         # self.testimgpath = os.path.join(self.temppath,"MyTestImage.png")
@@ -66,7 +67,8 @@ class T(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        if os.path.isdir(cls.temppath): MATL.DeleteFolderTree(cls.temppath)
+        pass
+        #if os.path.isdir(cls.temppath): MATL.DeleteFolderTree(cls.temppath)
 
 
 if __name__ == '__main__':
