@@ -6,6 +6,8 @@ from builtins import range
 from PIL import Image
 import numpy as np
 import scipy.optimize as spoptimize
+from scipy.signal import convolve2d
+from pyquaternion import Quaternion
 
 import math
 import progressbar
@@ -53,10 +55,10 @@ def SaveImage(Matrix,Name,resc=False):
         Matrix=Rescale8bit(Matrix)
     Image.fromarray(np.uint8(Matrix),mode="L").save(Name,"png")    
 
-def SaveImageRaw(Matrix,Name):
+def SaveImageRaw(Matrix,Name,TifRes=None,resolution=None):
     '''Save pixel data in matrix as 32-bit float on a file.'''
-    Name=MATL.FixName(Name,'.tiff')
-    Image.fromarray(np.float32(Matrix),mode="F").save(Name,"TIFF")   
+    Name=MATL.FixName(Name,'.tif')
+    Image.fromarray(np.float32(Matrix),mode="F").save(Name,"TIFF",dpi=resolution)   
 
 
 # === Save/Show Images    
@@ -161,6 +163,25 @@ def SmoothImage(Matrix,N=1):
         A=B
     return A
 
+def MaskedSmooth(Matrix,N=1):
+    '''
+    Matrix - Image to smooth
+    N - number of iterations
+    '''
+    kernel = np.add.outer(*2*(np.arange(3)%2,))**2 / 8
+    aux_kernel = np.arange(9).reshape(3, 3)%2 / 8
+
+    Mask = Matrix==0
+
+    corrector = convolve2d(Mask, aux_kernel, 'same')
+    result = Matrix.copy()
+    for j in range(N):
+        result = result * corrector + convolve2d(result, kernel, 'same')
+        result[Mask]=0
+    return result
+
+
+
 # Convert 1D Image to RGBA
 def ConvertToRGB(MpixO,cmap=None,markzero=False,nf=0.001,N=1024,RGBPoints=None):
     '''Convert 1D Image to RGBA'''
@@ -227,40 +248,42 @@ def Rescale8bit(Matrix):
 # TRANSFORMATIONS
 
 class CoordsObj(object):
-    def __init__(self,Coords=None,Img=None,XYScaling=None,ZScaling=None,InactiveThreshold=None):
+    def __init__(self,Coords=None,Img=None,XYScaling=None,ZScaling=None,InactiveThreshold=None,Smooth=None):
         self.Mat = None
         self.XYScaling = None
         self.MN = None
         self.Coords = None
+        self.pavg = None
         
         if Coords is not None:
             self.setFromCoords(Coords)
         elif Img is not None:
-            self.setFromImg(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold)
+            self.setFromImg(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold,Smooth=Smooth)
 
     # INITIALIZATION
 
-    def setFromImg(self,Img,XYScaling=None,ZScaling=None,InactiveThreshold=None):
+    def setFromImg(self,Img,XYScaling=None,ZScaling=None,InactiveThreshold=None,Smooth=None):
         ''' Create Coordinates object from Path or Numpy'''
         if type(Img) == np.ndarray:
-            self.setFromMat(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold)
+            self.setFromMat(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold,Smooth=Smooth)
         elif type(Img) == type("string"):
-            self.setFromPath(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold)
+            self.setFromPath(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold,Smooth=Smooth)
 
-    def setFromPath(self,Img,XYScaling=None,ZScaling=None,InactiveThreshold=None):
+    def setFromPath(self,Img,XYScaling=None,ZScaling=None,InactiveThreshold=None,Smooth=None):
         ''' Create Coordinates object from Image Path'''
         Mat , ImgXYScaling = GetImageMatrix(Img,GetTiffRes=True)
         if XYScaling is None: XYScaling=ImgXYScaling
-        self.setFromMat(Mat,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold)
+        self.setFromMat(Mat,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold,Smooth=Smooth)
 
-    def setFromMat(self,Mat,XYScaling=None,ZScaling=None,InactiveThreshold=None):
+    def setFromMat(self,Mat,XYScaling=None,ZScaling=None,InactiveThreshold=None,Smooth=None):
         ''' Create Coordinates object from Matrix (image)'''
         self.Mat = Mat
         if ZScaling is not None: self.Mat*=ZScaling
         self.XYScaling=XYScaling
         if self.XYScaling is None: self.XYScaling = (1.0,1.0)
         self.MN=Mat.shape
-        self.Coords=self.MatToCoords(InactiveThreshold=InactiveThreshold)
+        self.Coords=self.MatToCoords(InactiveThreshold=InactiveThreshold,Smooth=Smooth)
+        self.pavg = np.average(self.Coords,axis=0)
 
     def resetFromCoords(self,Coords):
         ''' Same as setFromCoords but also resets MN and XYScaling'''
@@ -268,11 +291,13 @@ class CoordsObj(object):
         self.XYScaling = None
         self.MN = None
         self.Coords = Coords
+        self.pavg = np.average(self.Coords,axis=0)
 
     def setFromCoords(self,Coords):
         ''' Create Coordinates object from Coordinates. Note that MN and XYScaling remain the same as before'''
         self.Mat = None
         self.Coords = Coords
+        self.pavg = np.average(self.Coords,axis=0)
 
     def fixXYScaling(self,XYScaling=None):
         if XYScaling is not None: self.XYScaling = XYScaling # Overide with new XYScale
@@ -285,6 +310,8 @@ class CoordsObj(object):
     def setFittedMN(self):
         M=(np.amax(self.Coords[:,0])-np.amin(self.Coords[:,0]))/self.XYScaling[0]
         N=(np.amax(self.Coords[:,1])-np.amin(self.Coords[:,1]))/self.XYScaling[1]
+        M=(np.amax(self.Coords[:,0])-np.amin(self.Coords[:,0]))*self.XYScaling[0]
+        N=(np.amax(self.Coords[:,1])-np.amin(self.Coords[:,1]))*self.XYScaling[1]
         self.MN = (M,N)
 
     def fitDim(self,CoordObjInstance):
@@ -303,31 +330,34 @@ class CoordsObj(object):
         ''' Gets Coordinates '''
         return self.Coords
 
-    def getTransformedCoords(self,R,T):
-        return self.ApplyRotationAndTranslation(self.Coords,R,T)
+    def getTransformedCoords(self,R,T,pavg=None):
+        if pavg is None: pavg = self.pavg
+        return self.ApplyRotationAndTranslation(self.Coords,R,T,pavg=pavg)
 
-    def getMat(self,MN=None,XYScaling=None):
+    def getMat(self,MN=None,XYScaling=None,GetResolution=False):
         ''' Gets Matrix'''
         if (self.Mat is None) or (MN != self.MN) or (XYScaling != self.XYScaling):
             self.computeMat(MN=MN,XYScaling=XYScaling)
+        if GetResolution: return self.Mat,self.XYScaling
         return self.Mat
 
-    def getTransformedMat(self,R,T,MN=None,XYScaling=None):
+    def getTransformedMat(self,R,T,MN=None,XYScaling=None,GetResolution=False):
         if (self.Mat is None) or (MN != self.MN) or (XYScaling != self.XYScaling):
             self.fixXYScaling(XYScaling)
             self.fixMN(MN)
-            return self.CoordsToMat(R=R,T=T)
+            Mat=self.CoordsToMat(R=R,T=T)
+            if GetResolution: return Mat,self.XYScaling
+            return Mat
 
-        
-        
     def getIJ(self,R=None,T=None):
         if R is None: R=np.array([0,0,0])
         if T is None: T=np.array([0,0,0])
 
-        NewCoords = self.ApplyRotationAndTranslation(self.Coords,R,T)
+        NewCoords = self.getTransformedCoords(R,T)
 
         M,N=self.MN
-        sx,sy = self.XYScaling
+        #sx,sy = float(self.XYScaling[0]),float(self.XYScaling[1])
+        sx,sy = 1/float(self.XYScaling[0]),1/float(self.XYScaling[1])
         IJ=np.zeros((NewCoords.shape[0],2))
         X=IJ[:,0]
         Y=IJ[:,1]
@@ -348,7 +378,8 @@ class CoordsObj(object):
         IY=np.logical_and(Y>=0,Y<=N-1)
         II=np.logical_and(IX,IY)
     
-        return IJ[II],Z[II]
+        return IJ[II],Z[II]#,NewCoords[II]
+
 
     # STATIC METHODS FOR COORD TRANSFORMATION
 
@@ -367,29 +398,64 @@ class CoordsObj(object):
     
     @classmethod
     def getRotationMatrix(cls,rV):
-        ''' Get Rotation matrix after providing the 3 angles (phi,theta,psi) '''
-        phi,theta,psi = rV
-        A=cls.getSingleRotationMatrix(phi,0)
-        B=cls.getSingleRotationMatrix(-theta,1)
-        C=cls.getSingleRotationMatrix(psi,2)
-        return np.matmul(C,np.matmul(B,A))
+        ''' Get Rotation matrix after providing the 3 angles (phi,theta,psi) or a quaternion or a new system of coordinates (A,B,C)'''
+        if len(rV)==3:
+            phi,theta,psi = rV
+            A=cls.getSingleRotationMatrix(phi,0)
+            B=cls.getSingleRotationMatrix(-theta,1)
+            C=cls.getSingleRotationMatrix(psi,2)
+            return np.matmul(C,np.matmul(B,A))
+        elif len(rV)==4:
+            return Quaternion(rV).rotation_matrix
+
+
     
     @classmethod
-    def ApplyRotationAndTranslation(cls,Coords,rV,tV):
+    def ApplyRotationAndTranslation_old(cls,Coords,rV,tV):
         ''' Returns the Coords after being transformed '''
-        RM = cls.getRotationMatrix(rV)
+        rVn=rV
+        if len(rV)==6:
+            rVn=np.concatenate((tV,rV))
+        RM = cls.getRotationMatrix(rVn)
         return np.dot(Coords,np.transpose(RM))+tV
+    
+    @classmethod
+    def ApplyRotationAndTranslation(cls,Coords,rV,tV,pavg=None):
+        ''' Returns the Coords after being transformed. Rotations are relative to center of gravity of Coordinates'''
 
+        # Robust input of pavg
+        if type(pavg) is np.ndarray:
+            pass
+        elif pavg=="auto":
+            pavg=np.average(Coords,axis=0)
+        elif type(pavg) is list:
+            pavg=np.array(pavg)
+        elif (pavg is None) or (pavg == 0):
+            print("Roation Center Assumed at Origin. Set pavg=0 to supress this message")
+            pavg=np.zeros(3)
+        else:
+            raise ValueError("Can't Understand the value given for pavg:"+str(pavg))
+
+        # Get rotation Matrix
+        RM = cls.getRotationMatrix(rV)
+
+        # Get Relative Coordinates wrt Center of Gravity (pavg)
+        Cg=Coords-pavg
+        # Get Rotated Relative Coordinates
+        RCg=np.dot(Cg,np.transpose(RM))
+
+        return RCg+(pavg+tV)
 
     # CONVERSION
 
-    def MatToCoords(self,InactiveThreshold=None):
+    def MatToCoords(self,InactiveThreshold=None,Smooth=None):
         '''Convert image matrix to active coordinates
 
         Optional: InactiveThreshold (float) - Values less or equal to this threshold are considered inactive
         Output: Array of [x,y,z] 
         '''
-        sx,sy=self.XYScaling
+        #sx,sy=self.XYScaling
+        sx,sy = 1/float(self.XYScaling[0]),1/float(self.XYScaling[1])
         # Get Shape of Array (image)
         M,N=self.MN
         # Use coordinates wrt center
@@ -399,7 +465,11 @@ class CoordsObj(object):
         B0=(B0-dx)*sx
         B1=(B1-dy)*sy
         # Make coordinates
-        Coords=np.dstack((B0, B1, self.Mat))
+        newmat=self.Mat.copy()
+        if Smooth is not None:
+            newmat=MaskedSmooth(newmat,N=Smooth)
+
+        Coords=np.dstack((B0, B1, newmat))
         # Return active coordinates
         if InactiveThreshold is None:
             return Coords[self.Mat==self.Mat]
@@ -419,7 +489,7 @@ class CoordsObj(object):
 
 
 class ImageFit(object):
-    def __init__(self, RefImage, **kwargs):
+    def __init__(self, RefImage, InactiveThreshold=None, **kwargs):
         '''Class to find the transformation that fits
            an image to a reference image.
 
@@ -428,8 +498,8 @@ class ImageFit(object):
                    ZScaling - Factor to scale the pixel values (z)
         '''
 
-        self.CReference = CoordsObj(Img=RefImage, **kwargs)
-
+        self.CReference = CoordsObj(Img=RefImage, InactiveThreshold=InactiveThreshold, **kwargs)
+        self.RefInactiveThreshold=InactiveThreshold
         self.CImage = CoordsObj()
         self.CImage.fitDim(self.CReference)
 
@@ -479,6 +549,7 @@ class ImageFit(object):
 
         # Estimate Center of Membranes
         O_Ref=np.average(CRef,axis=0)
+        self.O_Ref = O_Ref
         O_New=np.average(CNew,axis=0)
     
         # Estimate Highest point of Membranes
@@ -486,10 +557,16 @@ class ImageFit(object):
         M_New=CNew[np.argmax(CNew[:,2])]
 
         # Estimate Relative rotation between two membranes
-        r0=[0,0,-self.ComputeHorizontalAngle(M_New-O_New,M_Ref-O_Ref)]
-        # Estimate Relative displacement between two membranes
-        t0=O_Ref-CoordsObj.ApplyRotationAndTranslation(O_New,r0,[0,0,0])
-    
+        rotangle=self.ComputeHorizontalAngle(M_New-O_New,M_Ref-O_Ref)
+
+        # Angles
+        r0 = [0,0,-rotangle]
+        t0 = O_Ref - O_New
+
+        # Quaternions
+        # r0=Quaternion(axis=[0,0,1],radians=-rotangle).elements
+        # t0=O_Ref-CoordsObj.ApplyRotationAndTranslation(O_New,r0,[0,0,0])
+
         return r0,t0
 
     # METHODS
@@ -504,17 +581,21 @@ class ImageFit(object):
 
     @staticmethod
     def getRTtup(X):
-        return X[0:3],X[3:6]
-    
+        if len(X)==6:
+            return X[0:3],X[3:6]
+        elif len(X)==7:
+            return X[0:4],X[4:7]
+        
+
+
     @staticmethod
     def getRTarr(tup):
         return np.concatenate(tup)
 
     def CostFunction(self,RT):
-
         R,T=self.getRTtup(RT)
         IJNew,ZNew = self.CImage.getIJ(R,T)
-    
+
         IJi=np.floor(IJNew).astype(np.int32)
         IJf=np.ceil(IJNew).astype(np.int32)
         alf=(IJNew-IJi)/(IJf-IJi)
@@ -522,23 +603,37 @@ class ImageFit(object):
         Zif=self.CReference.Mat[IJi[:,0],IJf[:,1]]
         Zfi=self.CReference.Mat[IJf[:,0],IJi[:,1]]
         Zff=self.CReference.Mat[IJf[:,0],IJf[:,1]]
+        
+        Iii=Zii>self.RefInactiveThreshold
+        Iif=Zif>self.RefInactiveThreshold
+        Ifi=Zfi>self.RefInactiveThreshold
+        Iff=Zff>self.RefInactiveThreshold
+        II=np.logical_and(np.logical_and(Iii,Iif),np.logical_and(Ifi,Iff))
 
         Zai=Zfi*alf[:,0]-Zii*(alf[:,0]-1)
         Zaf=Zff*alf[:,0]-Zif*(alf[:,0]-1)
         Zab=Zaf*alf[:,1]-Zai*(alf[:,1]-1)
 
-        DZ=ZNew-Zab
+        DZ=ZNew[II]-Zab[II]
         DZ=DZ**2
-        return np.sum(DZ)
+        N=len(DZ)
+        C1=np.sum(DZ)/N # Average SSQ distance between doubly-active points of membranes (best fit)
 
-    def ComputeGradientCost(self,RT):
+        Ntot=len(self.CImage.Coords[:,0])
+        PI=1-N/Ntot #percentage of nodes not contributing to fit cost
+        C2=10*np.exp(PI/0.1-1)
+        return C1+C2
+
+    def ComputeGradientCost(self,RT,Incs=None):
         R,T=self.getRTtup(RT)
+        if Incs is None:
+            DR,DT=1E-7,1E-7
+        else:
+            DR,DT=Incs[0],Incs[1]
         LR,LT = len(R),len(T)
 
         Cost0 = self.CostFunction(RT)
     
-        DR=1E-8
-        DT=1E-8
         GradientR = np.zeros(LR)
         GradientT = np.zeros(LT)
 
@@ -559,68 +654,76 @@ class ImageFit(object):
             GradientT[i] = (CostNew-Cost0)/DT
 
         return self.getRTarr((GradientR,GradientT))
-
-    def GradientDescent(self,RTin):
-        GammaR=1E-10
-        GammaT=1E-10
-        Rin,Tin = self.getRTtup(RTin)
-
-        R,T=np.array(Rin),np.array(Tin)
-        R_old,T_old=R.copy(),T.copy()
-        LR,LT = len(R),len(T)
-        GR,GT = np.zeros(LR),np.zeros(LT)
-        GR_old,GT_old = np.zeros(LR),np.zeros(LT)
-
-        print("\n\n\n\n\n")
-        Cost_new = self.CostFunction(self.getRTarr((R,T)))
-     
-        for i in range(150):
-            GR_old,GT_old=GR,GT
-            GR,GT = self.getRTtup(self.ComputeGradientCost(self.getRTarr((R,T))))
-
-            if i>0:
-                dr,dgr=R-R_old,GR-GR_old
-                denR=np.dot(dgr,dgr)
-                GammaR = max(np.dot(dr,dgr)/denR,1E-17)
-                GammaR = np.dot(dr,dgr)/denR
-
-                dt,dgt=T-T_old,GT-GT_old
-                denT=np.dot(dgt,dgt)
-                GammaT = max(np.dot(dt,dgt)/denT,1E-17)
-                GammaT = np.dot(dt,dgt)/denT
-
-                Gamma=((np.dot(dr,dgr)+np.dot(dt,dgt))/(denR+denT))
-                GammaR=Gamma
-                GammaT=Gamma
-                #print(GammaR,GammaT)
-
-
-            R_old,T_old=R,T
-
-            R=R-GammaR*GR
-            T=T-GammaT*GT
-            #print(R,T)
-            Cost_old=Cost_new
-            Cost_new=self.CostFunction(self.getRTarr((R,T)))
-            # print(Cost_old-Cost_new)
-
-        return R,T
+    
 
     def ScipyOptimize(self,RTin,silent=False):
         options=None
         if not silent: options={"disp":True}
         OptResult = spoptimize.minimize(self.CostFunction,RTin,jac=self.ComputeGradientCost,options=options)
-        # OptResult = spoptimize.minimize(self.CostFunction,RTin,options={"disp":True})
+        # OptResult = spoptimize.minimize(self.CostFunction,RTin,jac=self.ComputeGradientCost,method='BFGS',options=options)
+        # OptResult = spoptimize.basinhopping(self.CostFunction,RTin,minimizer_kwargs={"jac":self.ComputeGradientCost})
         if not silent: print(OptResult.message)
         R,T=self.getRTtup(OptResult.x)
         return R,T
 
+    def GradientDescent(self,RTin):
+        Gamma=1E-10
+        Rin,Tin = self.getRTtup(RTin)
+        R,T=np.array(Rin),np.array(Tin)
+        LR,LT = len(R),len(T)
+        GR,GT = np.zeros(LR),np.zeros(LT)
 
+        Cost_new = self.CostFunction(self.getRTarr((R,T)))
+        R_old,T_old = R, T
+        for i in range(15):
+            
+            # Gradient
+            GR_old,GT_old=GR,GT
+            GR,GT = self.getRTtup(self.ComputeGradientCost(self.getRTarr((R,T))))
+            
+            # Gamma
+            if i>0: Gamma = self.AdjustGamma(R,T,R_old,T_old,GR,GT,GR_old,GT_old)
+            Gamma = self.LineSearchSimple(R_old,T_old,Gamma,GR,GT)
 
+            # Update
+            R_old,T_old=R,T
+            R,T=R-Gamma*GR,T-Gamma*GT
+            Cost_old=Cost_new
+            Cost_new=self.CostFunction(self.getRTarr((R,T)))
+            dc=1-Cost_new/Cost_old
+            print("Percent Reduction:",dc)
+            if dc<1E-5: break
 
+        return R,T
 
+    def AdjustGamma(self,R,T,R_old,T_old,GR,GT,GR_old,GT_old):
+        dr,dgr=R-R_old,GR-GR_old
+        denR=np.dot(dgr,dgr)
+        dt,dgt=T-T_old,GT-GT_old
+        denT=np.dot(dgt,dgt)
+        return ((np.dot(dr,dgr)+np.dot(dt,dgt))/(denR+denT))
 
+    def LineSearchSimple(self,Ro,To,Gamma,dr,dt):
+        def cost(a): return self.CostFunction(self.getRTarr((Ro-a*Gamma*dr,To-a*Gamma*dt)))
+        CO = cost(0.0)
 
+        alpha=1E-2
+        ct=0
+        while ct<20:
+            if ct==0:
+                print("Line Search",end="\n")
+            else:
+                print(".",end="\n")
+            ct+=1
+            NC=cost(alpha)
+            if NC<CO:
+                alpha=2*alpha
+                CO=NC
+            else:
+                alpha=alpha/2
+                break
+        print("")
+        return alpha*Gamma
 
 
 

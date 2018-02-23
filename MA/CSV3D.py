@@ -118,11 +118,22 @@ def MakeMPixMesh(npdata,verbose=True,Scale=(1.0,1.0,1.0),ColFile=None,ColMat=Non
         ExportPlyBinary(Nodes,Expfile,Faces,Colors)
     return Nodes,Faces,Colors    
     
-def Make3DSurfaceFromHeightMapTiff(File):
+def Make3DSurfaceFromHeightMapTiff(File,OFile=None):
     name,ext = os.path.splitext(File)
-    outfile=name+"_out.ply"
+    if OFile is None:
+        outfile=name+"_out.ply"
+    else:
+        outfile=MATL.FixName(OFile,"ply")
     myimg=Image.open(File)
-    xres,yres = myimg.info['resolution']
+    try:
+        xres,yres = myimg.info['resolution']
+    except:
+        try:
+            xres,yres = myimg.info['dpi']
+        except:
+            print("No Resolution Info")
+            xres=1.0
+            yres=1.0
     Mpix = np.copy(np.asarray(myimg))
     return MakeMPixMesh(Mpix,Scale=(1/xres,1/yres,1.0),Expfile=outfile)   
     
