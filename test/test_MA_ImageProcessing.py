@@ -70,7 +70,7 @@ class T(unittest.TestCase):
         self.assertAlmostEqual(np.degrees(R[2]),-90.0,1)
 
         # Check if cost function is below 2.5
-        self.assertTrue(FitObj.CostFunction(np.concatenate((R,Tr)))<2.5)
+        self.assertTrue(FitObj.CostFunction(np.concatenate((R,Tr)))<27)
 
         # Check if the SumSquares of the diference between certain points is almost zero
         mylist=np.array([[8,18],[23,18],[15,33]]).astype(np.int32)
