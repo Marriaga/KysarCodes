@@ -56,7 +56,7 @@ class T(unittest.TestCase):
         self.assertTrue(np.all(MATL.macauley(np.array([3,-3]),False)==np.array([0,-3])))
 
     def test_RunProgram(self):
-        MATL.RunProgram("python -c \"print('hello')\"",False)
+        MATL.RunProgram("python -c \"print(0)\"",False)
 
     def test_eig33s(self):
         mat=np.array([[1,7,6],[7,2,5],[6,5,3]])
