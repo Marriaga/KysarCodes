@@ -1,6 +1,7 @@
 # Auxiliary Folders
 .coverage
 .vs
+.vscode
 htmlcov
 
 # Byte-compiled / optimized / DLL files
