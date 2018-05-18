@@ -179,7 +179,7 @@ def RunMeshLabScript(Mesh_Path,Script_Path,Output_Path=None,Verbose=False):
     
 #Run a Shell process
 def RunProgram(cmd,f_print=True):
-	process = subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+	process = subprocess.Popen(cmd,shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
 	while process.poll() is None:
 		if f_print:
 			outl = process.stdout.readline().strip()
