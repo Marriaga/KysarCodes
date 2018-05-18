@@ -219,7 +219,7 @@ class ImageWindow(object):
            
 class OrientationAnalysis(object):
     def __init__(self,BaseAngFolder=None,OutputRoot=None,verbose=True):
-        self.Window=ImageWindow() #Shape=512,WType="Blackman",Alpha=-1,PType="Radial",PadShape=-1
+        self.Window=ImageWindow()
         self.ImageMatrix=None
         self.ImageShape=None
         self.WorkImageMatrix=None
