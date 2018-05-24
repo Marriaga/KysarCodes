@@ -608,10 +608,10 @@ class MyMesh(object):
         self.IndxL = self.MakeIndexed()
         
         # Neighbours in 1-Ring
-        self.NN = np.empty(self.NNodes,dtype=object)
-        self.NE = np.empty(self.NNodes,dtype=object)
-        self.EN = np.empty(self.NElems,dtype=object)
-        self.EE = np.empty(self.NElems,dtype=object)
+        self.NN = np.empty(self.NNodes,dtype=object) # Nodes near Node (list of nodes that are 1 side away from node)
+        self.NE = np.empty(self.NNodes,dtype=object) # Elements near Node (list of elements touching the node)
+        self.EN = np.empty(self.NElems,dtype=object) # Nodes near Element (list of nodes touching the element)
+        self.EE = np.empty(self.NElems,dtype=object) # Elements near Element (list of elements touching the nodes of the element)
         self.ComputeNeighbours()
         
         # Sides in 1-Ring
@@ -948,7 +948,25 @@ class MyMesh(object):
                 self.NSdiheS[n]=0.5*(S+Sn) #SHOULD BE S+Sn
     
     def ReadjustMinCurvDirections(self,Director_Vector=None,Auto_Director_Vector_Type=0,Make_Zero_Boundary=True,Aux_Director_Vector=None):
-        VTemp=np.zeros_like(self.NMinMag)
+        '''
+            Function to readjust the vectors of minimum curvature.
+
+            Input:
+                Director_Vector (default:None) -- Vector that determines the direction 
+                Auto_Director_Vector_Type (default:0) -- Automatic director vector based on local or global average direction. 
+                Make_Zero_Boundary (default: True) -- No vector on boundary
+                Aux_Director_Vector (default:None) -- Vector that determines the orientation after aligning with the Director_Vector 
+
+            Values for "Auto_Director_Vector_Type". Automatic Computation of Director Vector is based on:
+                0 -- GLOBAL Average direction
+                1 -- 001 - Average direction of        +        + Node
+                2 -- 010 - Average direction of        + 1-Ring +       
+                3 -- 011 - Average direction of        + 1-Ring + Node
+                4 -- 100 - Average direction of 2-Ring +        +       
+                5 -- 101 - Average direction of 2-Ring +        + Node
+                6 -- 110 - Average direction of 2-Ring + 1-Ring +       
+                7 -- 111 - Average direction of 2-Ring + 1-Ring + Node
+        '''
         Compute_Local_Average=False
         Flag_Aux_Director_Vector=False
         
@@ -959,15 +977,6 @@ class MyMesh(object):
         if Director_Vector is not None:
             Director_Vector=np.array(Director_Vector)
         else: # Automatic Computation of Director Vector
-              # 0 - GLOBAL Average direction
-              # 1 - 001 - Average direction of        +        + Node
-              # 2 - 010 - Average direction of        + 1-Ring +       
-              # 3 - 011 - Average direction of        + 1-Ring + Node
-              # 4 - 100 - Average direction of 2-Ring +        +       
-              # 5 - 101 - Average direction of 2-Ring +        + Node
-              # 6 - 110 - Average direction of 2-Ring + 1-Ring +       
-              # 7 - 111 - Average direction of 2-Ring + 1-Ring + Node
-
             if Auto_Director_Vector_Type == 0:
                 Director_Vector=np.zeros(3)
                 for n in range(self.NNodes):
@@ -979,6 +988,8 @@ class MyMesh(object):
             else:
                 Compute_Local_Average=True
 
+
+        VTemp=np.zeros_like(self.NMinMag)
         for n in range(self.NNodes): # Go node-by-node to fix vector
             if not (self.NIsB[n] and Make_Zero_Boundary): #Make boundary vectors 0 if desired
                 
