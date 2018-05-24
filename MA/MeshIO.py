@@ -736,12 +736,13 @@ class MyMesh(object):
         #  0-Simple Average
         #  1-Weighted by Area
         #  2-Weighted by Angle
+        def mymode(e,nei):
         if mode==0:
-            def mymode(e,nei): return 1.0
-        if mode==1:
-            def mymode(e,nei): return self.EAreas[e]
-        if mode==2:
-            def mymode(e,nei): return self.EAngs[e,nei]
+                return 1.0
+            elif mode==1:
+                return self.EAreas[e]
+            elif mode==2:
+                return self.EAngs[e,nei]
 
         self.ENorms = np.empty((self.NElems,3),dtype='f8') #nx,ny,nz
         self.EAngs  = np.empty((self.NElems,3),dtype='f8') #a1,a2,a3
@@ -777,14 +778,12 @@ class MyMesh(object):
         for n in range(self.NNodes):
             self.NNorms[n,:]/=np.linalg.norm(self.NNorms[n,:]) # Normalize Node Normals
 
-    
     def GetCentroid(self,e):
         C=np.zeros(3)
         for P in self.Nodes.Mat[self.EN[e]]:
             C+=[P['x'],P['y'],P['z']]
         return C/3.0    
 
-    
     def ComputeCurvatures(self):    
         self.NAmix  = np.zeros(self.NNodes,dtype='f8') #A
         self.NARing = np.zeros(self.NNodes,dtype='f8') #A
@@ -931,7 +930,7 @@ class MyMesh(object):
             self.NMinMag[n]=V
             
     def SmoothCurvatures(self,N=1):
-        for i in range(N): #Smooth N times
+        for _ in range(N): #Smooth N times
             source=self.NSdiheS.copy()
             for n in range(self.NNodes):
                 isb=self.NIsB[n]
