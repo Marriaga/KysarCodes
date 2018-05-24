@@ -17,14 +17,14 @@ import os
 
 ### File and Folder Manipulation ###
 
-# Deletes Folder Tree
 def DeleteFolderTree(Folder):
+    ''' Deletes Folder Tree '''
     if os.path.exists(Folder):
         #TODO: add exception handling for read-only files
         shutil.rmtree(Folder)
 
-# Combine Root and Suffix for a path. It's robust
 def MakeRoot(Root=None,Suffix=None):
+    ''' Combine Root and Suffix for a path. It's robust '''
     if Root is not None:
         Fold,File= os.path.split(Root)
         if Suffix is None and File=="":
@@ -36,33 +36,40 @@ def MakeRoot(Root=None,Suffix=None):
         return Name
     else:
         return None
-    
-# Make Folder for a Root Path (FOLD/fileroot)    
+
 def SetupOutput(RootPath):
+    '''Make Folder for a Root Path (FOLD/fileroot)'''
     MakeNewDir(os.path.dirname(RootPath))
     
-# MakeDir
 def MakeNewDir(FOLD,verbose=False):
+    '''Make New Folder if it does not already exist'''
     if not os.path.exists(FOLD):
         os.makedirs(FOLD)
         if verbose: print("Folder created at: " + FOLD)
 
-#Add Extension if it is missing
 def FixName(Name,Ext):
+    '''Add Extension if it is missing'''
     if not Ext[0] == '.':
         Ext='.'+Ext
     if not Name[-len(Ext):].lower()==Ext.lower():
         Name=Name+Ext
     return Name    
     
-# GetFiles that match Name and/or Extension
+# 
 def getFiles(Folder,Extension=None,PreName=None,MidName=None,PostName=None):
+    '''Search folder and returns list of files that match Name and/or Extension. Equivalent to
+    doing Folder/PreName*MidName*PostName.Extension
+
+    Input:
+        Folder -- Folder to Search
+        optional -- Extension,PreName,MidName,PostName
+    '''
     
     Name="*"
     if PreName:
         Name=PreName+"*"
     if MidName:
-        Name+=Midname+"*"
+        Name+=MidName+"*"
     if PostName:
         Name+=PostName+"."
     
@@ -77,14 +84,13 @@ def getFiles(Folder,Extension=None,PreName=None,MidName=None,PostName=None):
     
     return vlist
 
-
-#Rename that overwrites
 def rename(src,dest):
+    '''Rename that overwrites'''
     if os.path.isfile(dest): os.remove(dest)
     os.rename(src,dest)
 
-#Check if the Input is newer than the Output
 def IsNew(Input,Output,Force=False):
+    '''Check if the Input is newer than the Output'''
     if Force or (Output is None) or (not os.path.isfile(Output)):
         return True
     IStat = os.stat(Input).st_mtime
@@ -92,13 +98,13 @@ def IsNew(Input,Output,Force=False):
     if IStat > OStat: return True
     return False
 
-#Get Current Script Folder
 def GetHome():
+    '''Get Current Script Folder'''
     scriptf = os.path.abspath(inspect.stack()[-1][1])
     return os.path.dirname(scriptf)
 
-#Gets the binary representation of a file as text
 def GetBinRepr(InpFile,OutFile=None):
+    '''Gets the binary representation of a file as text'''
     with open(InpFile,"rb") as fp: A=repr(fp.read())
     if OutFile is not None:
         with open(OutFile,"w+") as fp: fp.write(A)
@@ -202,7 +208,7 @@ def Timeme(funct,var,NN=10,NNN=10,show=True):
     TotTime=0
     for i in range(NN):
         start =timeit.default_timer()
-        for t in range(NNN):
+        for _ in range(NNN):
             funct(*var)
         end =timeit.default_timer()
         TimeDiff=(end - start)/NNN*1000

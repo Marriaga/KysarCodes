@@ -615,9 +615,11 @@ class ImageFit(object):
         Zab=Zaf*alf[:,1]-Zai*(alf[:,1]-1)
 
         DZ=ZNew[II]-Zab[II]
-        DZ=DZ**2
         N=len(DZ)
+        print("Average Delta z: " + str(np.sum(np.abs(DZ))/N))
+        DZ=DZ**2
         C1=np.sum(DZ)/N # Average SSQ distance between doubly-active points of membranes (best fit)
+        
 
         Ntot=len(self.CImage.Coords[:,0])
         PI=1-N/Ntot #percentage of nodes not contributing to fit cost
