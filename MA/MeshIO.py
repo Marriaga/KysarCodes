@@ -157,16 +157,18 @@ class CNodes(object):
         else:
             self.Mat[lbl]=myarray
     
+
     # Takes the Matrix array and creates the Numpy array with the correct data type
     def PutMatrix(self,Matrix,Types=None,isnumbered=False):
         #isnumbered - Flag to indicate that the input matrix is numbered
         Matrix=np.array(Matrix)
         try:
             NN,NF = np.shape(Matrix)
+            Matrix=MATL.ConvertToStructArray(Matrix)
         except ValueError:
             NN = len(Matrix)
             NF = len(Matrix.dtype.names)
-        
+
         # Check data
         if (NF == 1) or (NF == 2 and isnumbered): raise ValueError("1D arrays do not make sense")        
         # Set dtype labels
@@ -189,18 +191,18 @@ class CNodes(object):
         
         # Add numbering of nodes if needed
         if not isnumbered:
-            Matrix=nprec.merge_arrays((np.arange(NN,dtype=self.PropTypes.GetType('N')),Matrix), flatten = True)
-            #Matrix=np.insert(Matrix,0,np.arange(NN,dtype='i4'),axis=1)
+            Numbering = np.arange(NN).view(dtype=[('N', self.PropTypes.GetType('N'))])
+            Matrix=nprec.merge_arrays((Numbering,Matrix), flatten = True)
             
         # Add z=0 for 2D Data    
         if (NF == 2) or (NF == 3 and isnumbered): #Assumed 2D Structure
-            Matrix=nprec.append_fields(Matrix,'z',np.zeros(NN,dtype=self.PropTypes.GetType('z')))
-            #Matrix=np.append(Matrix,np.zeros((NN,1),dtype='f8'),axis=1)
+            ZeroZ = np.zeros(NN).view(dtype=[('z', self.PropTypes.GetType('z'))])
+            Matrix=nprec.merge_arrays((Matrix,ZeroZ), flatten = True)
         
         # Save Matrix
-        Matrix.dtype.names=typelabs
+        Matrix=Matrix.astype(self.PropTypes.GetDtype())
         self.Mat = np.sort(Matrix,order='N')
-        
+
         # Check ordering and starting item
         MN = self.Mat['N']
         if MN[-1]-MN[0]+1 == len(MN):
@@ -227,6 +229,7 @@ class CElements(object):
         Matrix=np.array(Matrix)
         try:
             NN,NF = np.shape(Matrix)
+            Matrix=MATL.ConvertToStructArray(Matrix)
         except ValueError:
             NN = len(Matrix)
             NF = len(Matrix.dtype.names)
@@ -254,11 +257,11 @@ class CElements(object):
 
         # Add numbering of nodes if needed
         if not isnumbered:
-            Matrix=nprec.merge_arrays((np.arange(NN,dtype=self.PropTypes.GetType('N')),Matrix), flatten = True)
-            #Matrix=np.insert(Matrix,0,np.arange(NN,dtype='i4'),axis=1)
+            Numbering = np.arange(NN).view(dtype=[('N', self.PropTypes.GetType('N'))])
+            Matrix=nprec.merge_arrays((Numbering,Matrix), flatten = True)
         
         # Save Matrix
-        Matrix.dtype.names=typelabs
+        Matrix=Matrix.astype(self.PropTypes.GetDtype())
         self.Mat = np.sort(Matrix,order='N')
         
         # Check ordering and starting item
@@ -431,11 +434,12 @@ class PLYIO(BaseIO):
         "property list uchar int vertex_indices\n" \
         "end_header\n"
         
-        fp.write(header)
+        fp.write(header.encode())
 
     def WriteArray(self,fp,Array):
         for line in Array:
-            fp.write(" ".join([str(el) for el in line]) + "\n")
+            asciiline = " ".join([str(el) for el in line]) + "\n"
+            fp.write(asciiline.encode())
         
     def WriteNodesASCII(self,fp): 
         NoNLabs=self.PropTypes.Ltype[1:]
@@ -450,8 +454,9 @@ class PLYIO(BaseIO):
         self.WriteArray(fp,TmpElems)
         
     def WriteNodesBinary(self,fp):
-        NoNLabs=self.PropTypes.Ltype[1:]
-        TmpNodes=self.Nodes.Mat[NoNLabs].copy().data
+        NoNLabs = self.PropTypes.Ltype[1:]
+        tmpdtype = self.Nodes.Mat.dtype.descr[1:]
+        TmpNodes = self.Nodes.Mat[NoNLabs].copy().data.astype(tmpdtype)
         TmpNodes.tofile(fp)
         
     def WriteElemsBinary(self,fp):
@@ -506,7 +511,7 @@ class VTUIO(BaseIO):
         self.SetNodeData()
         self.SetElemData()
         
-        with open(vtufile, 'wb') as fp:
+        with open(vtufile, 'w') as fp:
             self.doc.writexml(fp, newl='\n')
     
     def SetPiece(self):
@@ -737,7 +742,7 @@ class MyMesh(object):
         #  1-Weighted by Area
         #  2-Weighted by Angle
         def mymode(e,nei):
-        if mode==0:
+            if mode==0:
                 return 1.0
             elif mode==1:
                 return self.EAreas[e]
@@ -1036,7 +1041,7 @@ class MyMesh(object):
                         VTemp[n]=Vb
 
         self.NMinMag=VTemp         
-            
+
     def _quickInterp(self,field_lbl,nodes,baris):
         val=0.0
         for node,bari in zip(nodes,baris):
@@ -1158,8 +1163,8 @@ class MyMesh(object):
                 l1,l2,l3 = self._getBaricentricCoordinates(np.array([XX,YY]),P1,P2,P3)
                 if (l1>=0 and l2>=0 and l3>=0 and l1<=1 and l2<=1 and l3<=1): #Is inside Triangle
                     return nodes,[l1,l2,l3]
-            
-            
+                         
+
 # def LoadFile(self,FilePath):
     # path,ext = os.path.splitext(FilePath)
     # if ext == ".ply":
