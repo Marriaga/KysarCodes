@@ -1037,7 +1037,127 @@ class MyMesh(object):
 
         self.NMinMag=VTemp         
             
+    def _quickInterp(self,field_lbl,nodes,baris):
+        val=0.0
+        for node,bari in zip(nodes,baris):
+            val+=self.Nodes.Mat[field_lbl][node]*bari
+        return val
 
+    def InterpolateFieldForPoint(self,point,field_lbl,DoZ=False):
+        ret_labels=[]
+        ret_values=[]
+
+        # Make label list 
+
+        if type(field_lbl) == type([]):
+            fieldLabels = field_lbl
+        elif field_lbl.lower() =='all': # Get all data
+            fieldLabels = [plbl for plbl in self.Nodes.PropTypes.Ltype if not plbl == 'N']
+        else:
+            fieldLabels = [field_lbl]
+
+        # Get interpolation properties
+        nodes,baris = self._getInterpolatingProps(point,DoZ=DoZ)
+
+        # Collect and interpolate all fields
+        for plbl in fieldLabels:
+            ret_labels.append(plbl)
+            ret_values.append(self._quickInterp(plbl,nodes,baris))
+
+        return ret_labels,ret_values
+
+    @staticmethod
+    def _getBaricentricCoordinates(point,P1,P2,P3):
+        def mycross(r1,r2):
+            return r1[0]*r2[1]-r1[1]*r2[0]
+        r12 = P2-P1
+        r23 = P3-P2
+        r3p = point-P3
+        r2p = point-P2
+        iA = 1/mycross(r12,r23)    
+        l1 = mycross(r23,r3p)*iA   
+        l3 = mycross(r12,r2p)*iA
+        return l1,1-l1-l3,l3
+
+
+    def _getInterpolatedField(self,point,field_lbl,DoZ=False):
+        XX = point[0]
+        YY = point[1]
+        if DoZ: ZZ = point[2]
+
+        #Get Nodes X,Y,Z
+        NX=self.Nodes.Mat['x']
+        NY=self.Nodes.Mat['y']
+        NZ=self.Nodes.Mat['z']
+
+        #Get distance squared from point to nodes
+        dNodes = (NX-XX)**2+(NY-YY)**2
+        if DoZ: dNodes+=(NZ-ZZ)**2
+        SortedIndex = np.argsort(dNodes)
+
+        # Closest node relative to median distance
+        relative_first_node_distance = dNodes[SortedIndex[0]]/dNodes[SortedIndex[int(len(dNodes)/2)]] #d(0)/d(L/2)
+
+        if  relative_first_node_distance < 1E-10: #Distance very small compared to Median distance
+            return self.Nodes.Mat[field_lbl][SortedIndex[0]]
+
+        else:
+            #Find up to 15 nodes close to point
+            ReasonableSize=min(len(dNodes),15)
+            CloseNodes=SortedIndex[:ReasonableSize]
+            CloseElements = []
+            for el_list in self.NE[CloseNodes]:
+                CloseElements.extend(el_list)
+            CloseElements=np.unique(CloseElements)
+            
+            for e in CloseElements:
+                nodes = self.EN[e]
+                P1,P2,P3 = [np.array([P['x'],P['y']]) for P in self.Nodes.Mat[nodes]]
+                l1,l2,l3 = self._getBaricentricCoordinates(np.array([XX,YY]),P1,P2,P3)
+                if (l1>=0 and l2>=0 and l3>=0 and l1<=1 and l2<=1 and l3<=1): #Is inside Triangle
+                    ll=[l1,l2,l3]
+                    val=0
+                    for i in range(3):
+                        val+=ll[i]*self.Nodes.Mat[field_lbl][nodes[i]]
+                    return val
+
+
+    def _getInterpolatingProps(self,point,DoZ=False):
+        XX = point[0]
+        YY = point[1]
+        if DoZ: ZZ = point[2]
+
+        #Get Nodes X,Y,Z
+        NX=self.Nodes.Mat['x']
+        NY=self.Nodes.Mat['y']
+        NZ=self.Nodes.Mat['z']
+
+        #Get distance squared from point to nodes
+        dNodes = (NX-XX)**2+(NY-YY)**2
+        if DoZ: dNodes+=(NZ-ZZ)**2
+        SortedIndex = np.argsort(dNodes)
+
+        # Closest node relative to median distance
+        relative_first_node_distance = dNodes[SortedIndex[0]]/dNodes[SortedIndex[int(len(dNodes)/2)]] #d(0)/d(L/2)
+
+        if  relative_first_node_distance < 1E-10: #Distance very small compared to Median distance
+            return [SortedIndex[0]],[1.0]
+
+        else:
+            #Find up to 15 nodes close to point
+            ReasonableSize=min(len(dNodes),15)
+            CloseNodes=SortedIndex[:ReasonableSize]
+            CloseElements = []
+            for el_list in self.NE[CloseNodes]:
+                CloseElements.extend(el_list)
+            CloseElements=np.unique(CloseElements)
+            
+            for e in CloseElements:
+                nodes = self.EN[e]
+                P1,P2,P3 = [np.array([P['x'],P['y']]) for P in self.Nodes.Mat[nodes]]
+                l1,l2,l3 = self._getBaricentricCoordinates(np.array([XX,YY]),P1,P2,P3)
+                if (l1>=0 and l2>=0 and l3>=0 and l1<=1 and l2<=1 and l3<=1): #Is inside Triangle
+                    return nodes,[l1,l2,l3]
             
             
 # def LoadFile(self,FilePath):
