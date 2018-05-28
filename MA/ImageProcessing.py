@@ -616,7 +616,7 @@ class ImageFit(object):
 
         DZ=ZNew[II]-Zab[II]
         N=len(DZ)
-        print("Average Delta z: " + str(np.sum(np.abs(DZ))/N))
+        # print("Average Delta z: " + str(np.sum(np.abs(DZ))/N))
         DZ=DZ**2
         C1=np.sum(DZ)/N # Average SSQ distance between doubly-active points of membranes (best fit)
         
