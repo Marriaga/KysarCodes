@@ -106,22 +106,24 @@ def MakePLYWithCurvatureInfo(plyFile_Smooth,plyFile_Curvs,SmoothN):
     print( "  Saving Data Ply ...")
     Ply.SaveFile(plyFile_Curvs)
 
-def InterpolatePropertiesFromPLY(plyFile_Curvs,txtFile_DataPoints,PointsList):
+def InterpolatePropertiesFromPLY(plyFile_Curvs,PointsList):
     #Compute properties of specific points
     Ply = MAMIO.PLYIO()
     Ply.LoadFile(plyFile_Curvs)
-    if MATL.IsNew(plyFile_Curvs,txtFile_DataPoints):
-        Nodes,Elems = Ply.ExportMesh()
-        MyM = MAMIO.MyMesh(Nodes,Elems)
-        Header = MyM.GetAllFieldsForInterpolation()
-        for p in PointsList:
-            properties = MyM.InterpolateFieldForPoint(p,"All")
+    Nodes,Elems = Ply.ExportMesh()
+    MyM = MAMIO.MyMesh(Nodes,Elems)
+    Header = MyM.GetAllFieldsForInterpolation()
+    properties=[]
+    for p in PointsList:
+        properties.append(MyM.InterpolateFieldForPoint(p,"All"))
+    return Header,properties
             
-def MakeAllFromTif(tiffile):
+def MakeAllFromTif(tiffile,PointsList=None):
     Base = os.path.splitext(tiffile)[0]
     plyFile = Base+"_PLY0_Original.ply"
     plyFile_Smooth = Base+"_PLY1_Reduced.ply"
     plyFile_Curvs = Base+"_PLY2_Curvatures.ply"
+    txtFile_DataPoints = Base+"_Interpolated_Data_Points"
 
     # Make ply from height map if heightmap is newer
     if MATL.IsNew(tiffile,plyFile): 
@@ -137,3 +139,10 @@ def MakeAllFromTif(tiffile):
     if MATL.IsNew(plyFile_Smooth,plyFile_Curvs):
         print("Computing Curvatures of Surface...")
         MakePLYWithCurvatureInfo(plyFile_Smooth,plyFile_Curvs,5)
+
+
+    if MATL.IsNew(plyFile_Curvs,txtFile_DataPoints) and (PointsList is not None):
+        print("Interpolating Points Info From Mesh...")
+        head,prop = InterpolatePropertiesFromPLY(plyFile_Curvs,PointsList)
+
+        # txtFile_DataPoints

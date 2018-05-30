@@ -1039,7 +1039,7 @@ class MyMesh(object):
                         if dot_Vb_AuxVec<0: Vb*=-1
                         VTemp[n]=Vb
 
-        self.NMinMag=VTemp         
+        self.NMinMag=VTemp
 
     def _quickInterp(self,field_lbl,nodes,baris):
         val=0.0
