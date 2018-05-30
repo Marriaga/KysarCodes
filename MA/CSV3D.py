@@ -97,7 +97,7 @@ def MakeCSVMesh(CSVfile,verbose=True,**kwargs):
     npdata=MATL.getMatfromCSV(CSVfile)
     return MakeMPixMesh(npdata,verbose,**kwargs)
     
-def MakeMPixMesh(npdata,verbose=True,Scale=(1.0,1.0,1.0),ColFile=None,ColMat=None,Expfile=None):
+def MakeMPixMesh(npdata,verbose=True,Scale=(1.0,1.0,1.0),ColFile=None,ColMat=None,Expfile=None,NoZeros=False):
     if ColFile is not None:
         if verbose: print("  - Getting Image")
         Mpix=MAIP.GetRGBAImageMatrix(ColFile,Silent=not verbose).reshape(-1,4)
@@ -113,12 +113,23 @@ def MakeMPixMesh(npdata,verbose=True,Scale=(1.0,1.0,1.0),ColFile=None,ColMat=Non
     if verbose: print("  - Generating Triangles")
     Nr,Nc= np.shape(npdata)
     Faces=MakeFaces(Nr,Nc)
+
+    if NoZeros:
+        NodesNotZero = Nodes['z']!=0.0
+        NN=len(Nodes)
+        NodesToKeep = np.arange(NN)[NodesNotZero]
+        Mapping = np.zeros(NN)
+        Mapping[NodesToKeep]=np.arange(len(NodesToKeep))
+        FacesToKeep = np.apply_along_axis(all, 1, NodesNotZero[Faces])
+        Nodes = Nodes[NodesToKeep]
+        Faces = Mapping[Faces[FacesToKeep]]
+
     if Expfile is not None:
         if verbose: print("  - Exporting Geometry")
         ExportPlyBinary(Nodes,Expfile,Faces,Colors)
     return Nodes,Faces,Colors    
     
-def Make3DSurfaceFromHeightMapTiff(File,OFile=None):
+def Make3DSurfaceFromHeightMapTiff(File,OFile=None,NoZeros=False):
     name,ext = os.path.splitext(File)
     if OFile is None:
         outfile=name+"_out.ply"
@@ -135,7 +146,7 @@ def Make3DSurfaceFromHeightMapTiff(File,OFile=None):
             xres=1.0
             yres=1.0
     Mpix = np.copy(np.asarray(myimg))
-    return MakeMPixMesh(Mpix,Scale=(1/xres,1/yres,1.0),Expfile=outfile)   
+    return MakeMPixMesh(Mpix,Scale=(1/xres,1/yres,1.0),Expfile=outfile,NoZeros=NoZeros)   
     
     
 if __name__ == "__main__":
