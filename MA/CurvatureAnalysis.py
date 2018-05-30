@@ -117,4 +117,23 @@ def InterpolatePropertiesFromPLY(plyFile_Curvs,txtFile_DataPoints,PointsList):
         for p in PointsList:
             properties = MyM.InterpolateFieldForPoint(p,"All")
             
-        
+def MakeAllFromTif(tiffile):
+    Base = os.path.splitext(tiffile)[0]
+    plyFile = Base+"_PLY0_Original.ply"
+    plyFile_Smooth = Base+"_PLY1_Reduced.ply"
+    plyFile_Curvs = Base+"_PLY2_Curvatures.ply"
+
+    # Make ply from height map if heightmap is newer
+    if MATL.IsNew(tiffile,plyFile): 
+        print("Making 3D Surface...")
+        MA3D.Make3DSurfaceFromHeightMapTiff(tiffile,OFile=plyFile,NoZeros=True)
+
+    # Smooth ply file if input ply is new
+    if MATL.IsNew(plyFile,plyFile_Smooth): 
+        print("Smoothing and reducing Surface...")
+        SmoothPly(plyFile,plyFile_Smooth)
+
+    # Make ply with curvature information
+    if MATL.IsNew(plyFile_Smooth,plyFile_Curvs):
+        print("Computing Curvatures of Surface...")
+        MakePLYWithCurvatureInfo(plyFile_Smooth,plyFile_Curvs,5)
