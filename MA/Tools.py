@@ -174,18 +174,19 @@ def RunMeshLabScript(Mesh_Path,Script_Path,Output_Path=None,Verbose=False):
     
     SetupOutput(Output_Path)
     cmd = "meshlabserver -i " + Mesh_Path + " -o " + Output_Path + " -s " + Script_Path
-    print(cmd)
+    print("  "+cmd)
     RunProgram(cmd,Verbose)
-    
+    print("  Meshlab Script Finished")
+
 #Run a Shell process
 def RunProgram(cmd,f_print=True):
-	process = subprocess.Popen(cmd,shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-	while process.poll() is None:
-		if f_print:
-			outl = process.stdout.readline().strip()
-			print(outl)
-	
-	if f_print: print(process.stdout.read())
+    process = subprocess.Popen(cmd,shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    while process.poll() is None:
+        outl = process.stdout.readline().strip()
+        if f_print:
+            print(outl)
+    outl=process.stdout.read()
+    if f_print: print(outl)
 
 
 
