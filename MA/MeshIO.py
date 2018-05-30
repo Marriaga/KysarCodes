@@ -100,7 +100,7 @@ class MyPropTypes(object):
     def NormEndi(self,Endi):
         for typlbl in self.Ltype:
             typtyp = self.GetType(typlbl)
-            if typtyp[0] in "=<>":
+            if typtyp[0] in "=<>|":
                 typtyp = typtyp[1:]
             typtyp=Endi+typtyp
             self.AddBaseType(typlbl,typtyp)
@@ -341,8 +341,7 @@ class PLYIO(BaseIO):
     def ReadHeader(self,fp):
         stage=0
         while True:
-            lvs=fp.readline().rstrip().split()
-            
+            lvs=fp.readline().decode().rstrip().split()
             if lvs[0]=="end_header":
                 break
             
@@ -368,7 +367,7 @@ class PLYIO(BaseIO):
         Nodes = np.empty(self.NNodes,dtype=np.dtype(self.PropTypes.GetDtype()))
         NP = self.PropTypes.GetNProp()
         for i in range(self.NNodes):
-            linelist=fp.readline().strip().split()
+            linelist=fp.readline().decode().strip().split()
             for p in range(NP):
                 Nodes[i][p]=linelist[p]
         self.SetNodes(Nodes,Types=self.PropTypes)
@@ -378,7 +377,7 @@ class PLYIO(BaseIO):
         Elems = np.zeros(self.NElem,dtype=[('p1','i4'),('p2','i4'),('p3','i4')])
         NP = 3
         for i in range(self.NElem):
-            linelist=fp.readline().strip().split()[1:]
+            linelist=fp.readline().decode().strip().split()[1:]
             for p in range(NP):
                 Elems[i][p]=linelist[p]
         self.SetElems(Elems)
