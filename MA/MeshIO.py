@@ -1047,6 +1047,9 @@ class MyMesh(object):
             val+=self.Nodes.Mat[field_lbl][node]*bari
         return val
 
+    def GetAllFieldsForInterpolation(self):
+        return [plbl for plbl in self.Nodes.PropTypes.Ltype if not plbl == 'N']
+
     def InterpolateFieldForPoint(self,point,field_lbl,DoZ=False):
         ret_labels=[]
         ret_values=[]
@@ -1056,7 +1059,7 @@ class MyMesh(object):
         if type(field_lbl) == type([]):
             fieldLabels = field_lbl
         elif field_lbl.lower() =='all': # Get all data
-            fieldLabels = [plbl for plbl in self.Nodes.PropTypes.Ltype if not plbl == 'N']
+            fieldLabels = self.GetAllFieldsForInterpolation()
         else:
             fieldLabels = [field_lbl]
 
