@@ -4,6 +4,7 @@ from __future__ import print_function
 from __future__ import absolute_import
 
 import numpy as np
+import pandas as pd
 import sys
 import os
 #import MA.ImageProcessing as MAIP
@@ -13,6 +14,18 @@ import MA.MeshIO as MAMIO
 
 sys.path.append('C:\\Program Files\\VCG\\MeshLab') # MeshLab
 
+def checkNewFiberImages(DirectionalityBase,csvFile_PointsDirectionality,PointsList):
+    for f in [DirectionalityBase + "_20X_" + position + "_Fibers.png" for position in PointsList[:,0]]:
+        if MATL.IsNew(f,csvFile_PointsDirectionality): return True
+    return False 
+
+def loadPointDataLocations(File):
+    Data = pd.read_csv(File)
+    Names = np.unique(Data["Name"])
+    Results = {}
+    for eachName in Names:
+        Results[eachName] = Data.loc[Data['Name'] == eachName]
+    return Results
 
 def MakeSmoothMeshlabScript(FilePath):
     ''' Make the meshlab script that smooths the mesh'''
@@ -73,7 +86,50 @@ def GetVectXYAng(Vec):
     Y=Vec[:,1]
     Ang = np.arctan2(Y,X) * 180/np.pi
     Ang[Ang<0]+=180
+    Ang[Ang>90]-=180
     return Ang
+
+def GetXYAng(Vec):
+    X=Vec[0]
+    Y=Vec[1]
+    Ang = np.arctan2(Y,X) * 180/np.pi
+    if Ang<0: Ang+=180
+    if Ang>90: Ang-=180
+    return Ang
+
+def getSubscript(i,UseLetters=True):
+    letter=['x','y','z']
+    if UseLetters:
+        if i<3: return letter[i]
+        raise ValueError("Cannot use letters for higher than 3 dimensions")
+    else:
+        return str(i)
+
+def buildIndex(root,shape=None,UseLetters=True):
+    if shape is None: return [root]
+    L=len(shape)
+    Index=[]
+    for i in range(shape[0]):
+        ilbl=getSubscript(i,UseLetters=UseLetters)
+        if L==1:
+            Index.append(root+ilbl)
+        elif L==2:
+            for j in range(shape[1]):
+                jlbl=getSubscript(j,UseLetters=UseLetters)
+                Index.append(root+ilbl+jlbl)
+        else:
+            raise ValueError("Higher than 3D is not Implemented")
+    return Index
+
+def CollectArray(Data,root,shape=None,UseLetters=True):
+    Index=buildIndex(root,shape=shape,UseLetters=UseLetters)
+    newshape=[-1]
+    if shape is not None: newshape.extend(shape)
+    return Data[Index].values.reshape(newshape)
+
+
+### MAIN FUNCTIONS ###
+
 
 def MakePLYWithCurvatureInfo(plyFile_Smooth,plyFile_Curvs,SmoothN):
     Ply = MAMIO.PLYIO()
@@ -93,56 +149,144 @@ def MakePLYWithCurvatureInfo(plyFile_Smooth,plyFile_Curvs,SmoothN):
     print( "  Readjust Min Curvature Directions ...")
     MyM.ReadjustMinCurvDirections()
     print( "  Creating Export Data ...")
-    MyM.Nodes.AppendField(MyM.NMinMag[:,0],'nx')
-    MyM.Nodes.AppendField(MyM.NMinMag[:,1],'ny')
-    MyM.Nodes.AppendField(MyM.NMinMag[:,2],'nz')
-    MyM.Nodes.AppendField(GetVectXYAng(MyM.NMaxCd),'Amax')
-    MyM.Nodes.AppendField(GetVectXYAng(MyM.NMinCd),'Amin')
-    MyM.Nodes.AppendField(GetVectXYAng(MyM.NMinMag),'Amag')
-    #MyM.Nodes.AppendField(MyM.Nktype,'T',atype=MyM.Nodes.PropTypes.AllTypes["T"])
-    MyM.Nodes.AppendField(MyM.Nktype,'T')
+    
+    #Normal Vector
+    MyM.Nodes.AppendArray(MyM.NNorms,'n')
+    #Shape Operator
+    MyM.Nodes.AppendArray(MyM.NSdiheS,'Shape')
+    MyM.Nodes.AppendArray(MyM.NHv,'H')
+
     print( "  Importing Data PLY ...")
     Ply.ImportMesh(MyM.Nodes,MyM.Elems)
     print( "  Saving Data Ply ...")
     Ply.SaveFile(plyFile_Curvs)
 
-def InterpolatePropertiesFromPLY(plyFile_Curvs,PointsList):
+def InterpolatePropertiesFromPLY(plyFile_Curvs,csvFile_PointsData,PointsList):
     #Compute properties of specific points
     Ply = MAMIO.PLYIO()
     Ply.LoadFile(plyFile_Curvs)
     Nodes,Elems = Ply.ExportMesh()
     MyM = MAMIO.MyMesh(Nodes,Elems)
     Header = MyM.GetAllFieldsForInterpolation()
+    Header.insert(0,"Position")
+
     properties=[]
     for p in PointsList:
-        properties.append(MyM.InterpolateFieldForPoint(p,"All"))
-    return Header,properties
-            
-def MakeAllFromTif(tiffile,PointsList=None):
-    Base = os.path.splitext(tiffile)[0]
+        xy=(p[1],p[2])
+        InterpValues=MyM.InterpolateFieldForPoint(xy,"All")
+        InterpValues.insert(0, p[0])
+        properties.append(InterpValues)
+
+    #Save File
+    Data = pd.DataFrame(data=properties, columns=Header)
+    Data.to_csv(csvFile_PointsData,index=False)
+
+def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,PointsList):
+    positions = PointsList[:,0]
+    Files=[DirectionalityBase + "_20X_"+ position +"_Fibers.png" for position in PointsList[:,0]]
+    
+
+
+
+
+
+def ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsResults):
+    Data = pd.read_csv(csvFile_PointsIntData)
+    S_Position = CollectArray(Data,'Position')
+    V_Coordinates = CollectArray(Data,'',[3])
+    #V_Normal = CollectArray(Data,'n',[3])
+    T_Shape=CollectArray(Data,'Shape',[3,3])
+    V_H = CollectArray(Data,'H',[3])
+
+    NPoints = len(S_Position)
+    outdata = []
+    header = ["Position","X","Y","Angle_KMax","Angle_KMin","Angle_KMinMag1","Angle_KMinMag2","Type"]
+    outdf = pd.DataFrame(index=np.arange(0, NPoints), columns=header)
+    for n in range(NPoints):
+        Vmax,Vmin,Vnor,kmax,kmin,Type,alph,VMM1, VMM2= MAMIO.MyMesh.IndividualCurvPrincipalDirections(T_Shape[n],V_H[n])
+        Angle_KMax=GetXYAng(Vmax)
+        Angle_KMin=GetXYAng(Vmin)
+        Angle_KMinMag1=GetXYAng(VMM1)
+        Angle_KMinMag2=GetXYAng(VMM2)
+        Coord = V_Coordinates[n]
+        outdf.loc[n] = [S_Position[n],Coord[0],Coord[1],Angle_KMax,Angle_KMin,Angle_KMinMag1,Angle_KMinMag2,Type]
+    outdf.to_csv(csvFile_PointsResults,index=False)
+
+
+### MASTER FUNCTIONS ###
+
+def getBaseNameFromFolder(File,Base):
+    if Base is None:
+        #Assumes that the Folder where the file is in is the main root name
+        Folder = os.path.dirname(File)
+        root = os.path.split(Folder)[-1]
+        Base = os.path.join(Folder,root)
+    return Base
+    
+def MakePLYFromTif(tiffile,Base=None,Force=False):
+    Base = getBaseNameFromFolder(tiffile,Base)
     plyFile = Base+"_PLY0_Original.ply"
     plyFile_Smooth = Base+"_PLY1_Reduced.ply"
     plyFile_Curvs = Base+"_PLY2_Curvatures.ply"
-    txtFile_DataPoints = Base+"_Interpolated_Data_Points"
 
     # Make ply from height map if heightmap is newer
-    if MATL.IsNew(tiffile,plyFile): 
+    if Force or MATL.IsNew(tiffile,plyFile): 
         print("Making 3D Surface...")
         MA3D.Make3DSurfaceFromHeightMapTiff(tiffile,OFile=plyFile,NoZeros=True)
 
     # Smooth ply file if input ply is new
-    if MATL.IsNew(plyFile,plyFile_Smooth): 
+    if Force or MATL.IsNew(plyFile,plyFile_Smooth): 
         print("Smoothing and reducing Surface...")
         SmoothPly(plyFile,plyFile_Smooth)
 
     # Make ply with curvature information
-    if MATL.IsNew(plyFile_Smooth,plyFile_Curvs):
+    if Force or MATL.IsNew(plyFile_Smooth,plyFile_Curvs):
         print("Computing Curvatures of Surface...")
         MakePLYWithCurvatureInfo(plyFile_Smooth,plyFile_Curvs,5)
 
+    return plyFile_Curvs
 
-    if MATL.IsNew(plyFile_Curvs,txtFile_DataPoints) and (PointsList is not None):
+def ProcessPoints(plyFile_Curvs,PointsDF,Base=None,Force=False):
+    Base = getBaseNameFromFolder(plyFile_Curvs,Base)
+    csvFile_PointsIntData = Base+"_Points_Interpolated_Data.csv"
+    DirectionalityBase = Base
+    csvFile_PointsDirectionality = Base+"_Points_Directionality.csv"
+    csvFile_PointsResults = Base+"_Points_Results.csv"
+
+    PointsList = PointsDF[['Position','X','Y']].values
+
+    # Go to each point in mesh and extract interpolated results from ply mesh
+    if Force or MATL.IsNew(plyFile_Curvs,csvFile_PointsIntData):
         print("Interpolating Points Info From Mesh...")
-        head,prop = InterpolatePropertiesFromPLY(plyFile_Curvs,PointsList)
+        InterpolatePropertiesFromPLY(plyFile_Curvs,csvFile_PointsIntData,PointsList)
 
-        # txtFile_DataPoints
+    # Compute Directionality from Fiber Images 
+    if Force or checkNewFiberImages(DirectionalityBase,csvFile_PointsDirectionality,PointsList):
+        print("Compute Directionality for Points Info From Mesh...")
+        ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,PointsList)
+       
+    # Collect Angles from each point 
+    if Force or MATL.IsNew(csvFile_PointsIntData,csvFile_PointsResults):
+        print("Process Interpolated Points Data...")
+        ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsResults)
+
+    
+def DO_EVERYTHING(FoldersNames,THEBASE,Force=False):
+    '''
+    FoldersNames- Folers that contain the tif file with the heights and the fiber images.
+                  tif files should be named "Folder_AverageHeight_512_Smooth.tif" and fiber
+                  images should be named "Folder_20X_Position_Fibers.png"
+    THEBASE- The path where all the folder are. Also should contain the Points.csv file,
+             which has the fields "Name,Position,X,Y", where "Name" is the folder name,
+             "Position" is the label for position in membrane and "X,Y" are the coordinates
+             in 10X membrane coordinates of said points.
+    '''
+
+    MakeSmoothMeshlabScript(os.path.join(THEBASE,"MashlabScript"))
+    Points=loadPointDataLocations(os.path.join(THEBASE,"Points.csv"))
+
+    for FOLD in FoldersNames:
+        tiffile = os.path.join(THEBASE,FOLD,FOLD+"_AverageHeight_512_Smooth.tif")
+        plyFile_Curvs = MakePLYFromTif(tiffile,Force=Force)
+        ProcessPoints(plyFile_Curvs,Points[FOLD],Force=Force)
+
