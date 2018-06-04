@@ -7,7 +7,6 @@ from builtins import str
 from builtins import range
 from builtins import object
 import numpy as np
-#from scipy import optimize
 import scipy as sp
 
 import matplotlib.pyplot as plt
@@ -638,16 +637,6 @@ class Fitting(object):
             m.append(theta[self.NPVM*vmi+2])
         pu = []
 
-        MIN_ANG = -np.pi/2
-        MAX_ANG = np.pi/2
-        stop=False
-        m=np.array(m)
-        while not stop:
-            m[m<MIN_ANG]+=np.pi
-            m[m>MAX_ANG]-=np.pi
-            if (np.all(m<=MAX_ANG) and np.all(m>=MIN_ANG)):
-                stop=True
-
         if self.Uniform: pu = theta[-1]
         return p,kappa,m,pu
 
@@ -657,7 +646,6 @@ class Fitting(object):
         theta[3*N_VonMises_] - Parameter for Uniform
         '''
         VMPDF_SCALING_PARAMETER = 0.5
-        NPVM = self.NPVM
 
         #Collect Args
         Angles_ = np.array(self.Angles).T
@@ -704,17 +692,34 @@ class Fitting(object):
             in_guess[self.NPVM*vmi+1] = np.array((6.0))
             in_guess[self.NPVM*vmi+2] = 0.5*(MIN_ANG + (MAX_ANG-MIN_ANG)*vmi/self.N_VonMises)
             Mcons[self.NPVM*vmi] = 1.0
-            bnds.extend([(0., 1.), (0., 100.), (1.1*MIN_ANG, 1.1*MAX_ANG)])
+            bnds.extend([(0., 1.), (0., 100.), (MIN_ANG, MAX_ANG)])
         if Uniform:
             in_guess[-1]=uniform_p
             Mcons[-1] = 1.0
-            bnds.extend([(0.,1.)])
+            bnds.extend([(0.,0.5)])
 
         cons = ({'type': 'eq', 'fun': lambda x:  np.dot(x,Mcons)-1.0})
 
-        results = sp.optimize.minimize(self.GeneralVMULogLike, in_guess, \
+        # Run Optimization
+        N_it=0
+        while N_it<5: #Repeat when result converged to exactly the edge of the angle
+            results = sp.optimize.minimize(self.GeneralVMULogLike, in_guess, \
                             method='SLSQP', bounds=bnds, constraints=cons, \
-                            tol=1e-6, options={'maxiter': 100, 'disp': True})
+                            tol=1e-6, options={'maxiter': 100, 'disp': False})
+            # Test if result is on edge 
+            sol = results.x
+            angindex = [self.NPVM*vmi+2 for vmi in range(self.N_VonMises)]
+            MinLimIndx = [i for i in angindex if abs(sol[i]-MIN_ANG)<1E-3]
+            MaxLimIndx = [i for i in angindex if abs(sol[i]-MAX_ANG)<1E-3]
+
+            if MinLimIndx or MaxLimIndx:
+                if MinLimIndx: sol[MinLimIndx]= MAX_ANG
+                if MaxLimIndx: sol[MaxLimIndx]= MIN_ANG
+                in_guess = sol
+                N_it+=1
+            else:
+                N_it=5
+
 
         if plot:
             Y=np.zeros_like(self.Angles)
