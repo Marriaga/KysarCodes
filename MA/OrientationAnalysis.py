@@ -7,6 +7,9 @@ from builtins import str
 from builtins import range
 from builtins import object
 import numpy as np
+#from scipy import optimize
+import scipy as sp
+
 import matplotlib.pyplot as plt
 import progressbar
 import os
@@ -512,7 +515,7 @@ class GradientAnalysis(object):
     def MakeHist(self):
         AngleBins = np.int32(np.round(self.GradAngles*(self.NBins-1)/180,0))
         ANGS=np.linspace(0,180,self.NBins)
-        Y=np.zeros_like(ANGS,dtype=np.float32)
+        Y=np.zeros_like(ANGS,dtype=np.float32) 
         ThresholdMagnitude=np.percentile(self.GradMagnitudes,50)
         
         for i in range(self.NBins):
@@ -548,9 +551,39 @@ class OrientationResults(object):
         self.Y=Y
         self.OutputRoot=OutputRoot
         
-    def GetXY(self):
-        return self.X,self.Y
+    def GetAI(self):
+        '''Wrapper of GetXY for obtaining data to use in Von-Mises fitting'''
+        return self.GetXY(Shifted=True,Radians=True,Normalized=True)
+
+    def GetXY(self,Shifted=False,Radians=False,Normalized=False):
+        ''' Get values of histogram.
+
+        Shifted - If true, results come from -90 to 90, else 0 to 180
+        Normalized - If true, angles are in radians and integral of histogram is 1
+        '''
+        Angles = self.X
+        Values = self.Y
+
+        if Shifted:
+            Angles=np.delete(self.X,0)
+            Values=np.delete(self.Y,0)
+            RolingIndex=np.where(Angles==90)[0][0]+1
+            Angles=np.roll(Angles,RolingIndex)
+            Values=np.roll(Values,RolingIndex)
+            Angles[Angles>90]-=180
+            Angles = np.insert(Angles,0,-90)
+            Values = np.insert(Values,0,Values[-1])
         
+        if Radians:
+            Angles=np.radians(Angles)
+
+        if Normalized:
+            IntensityIntegral = np.trapz(Values, x=Angles)
+            Values = Values/IntensityIntegral
+
+        return Angles,Values
+        
+
     # Plot figure of intensity vs angle    
     def PlotHistogram(self,Show=False):
         FileName = self.OutputRoot if not Show else None
@@ -586,8 +619,128 @@ class OrientationResults(object):
         ax.set_xticks(list(range(int(xmin),int(xmax+2),45)))
         ax.xaxis.grid(True,color='k',linestyle='--', linewidth=0.5)
 
+
+
+
+class Fitting(object):
+    def __init__(self,Angles,Intensities):
+        self.Angles = Angles
+        self.Intensities = Intensities
+
+    def collectVMUParameters(self,theta):
+        # Collect Parameters of Distributions
+        p=[]     # Weight
+        kappa=[] # Dispersion
+        m=[]     # Direction
+        for vmi in range(self.N_VonMises):
+            p.append(theta[self.NPVM*vmi])
+            kappa.append(theta[self.NPVM*vmi+1])
+            m.append(theta[self.NPVM*vmi+2])
+        pu = []
+
+        MIN_ANG = -np.pi/2
+        MAX_ANG = np.pi/2
+        stop=False
+        m=np.array(m)
+        while not stop:
+            m[m<MIN_ANG]+=np.pi
+            m[m>MAX_ANG]-=np.pi
+            if (np.all(m<=MAX_ANG) and np.all(m>=MIN_ANG)):
+                stop=True
+
+        if self.Uniform: pu = theta[-1]
+        return p,kappa,m,pu
+
+    def GeneralVMULogLike(self,theta):
+        ''' General LogLike function
+        theta[0 to 3*N_VonMises_ -1] - Parameters for Von-Mises
+        theta[3*N_VonMises_] - Parameter for Uniform
+        '''
+        VMPDF_SCALING_PARAMETER = 0.5
+        NPVM = self.NPVM
+
+        #Collect Args
+        Angles_ = np.array(self.Angles).T
+        Intensities_ = np.array(self.Intensities).T
+        N_VonMises_ = self.N_VonMises
+        Uniform_ = self.Uniform
         
+        p_,kappa_,m_,pu_ = self.collectVMUParameters(theta)
+
+        # Add Contributions of distributions
+        fm_=np.zeros_like(Intensities_)
+        for vmi in range(N_VonMises_):
+            fm_ += p_[vmi] * sp.stats.vonmises.pdf( Angles_, 
+                kappa_[vmi], loc = m_[vmi], scale = VMPDF_SCALING_PARAMETER )
+
+        if Uniform_:
+            Min_Angle = min(Angles_)
+            Range_Angles = (max(Angles_) - min(Angles_))
+            fm_ += pu_ * sp.stats.uniform.pdf( Angles_, loc=Min_Angle, scale=Range_Angles)
+
+        # Return
+        out = (-1.0)*(np.sum( np.multiply( np.log( fm_ ), Intensities_ ) ))
+        return out
         
+    def FitVMU(self,N_VonMises=1,Uniform=True,plot=False):
+        self.N_VonMises = N_VonMises
+        self.Uniform = Uniform
+        self.NPVM = 3 # Number of Von-Mises Parameters
+
+        MIN_ANG = -np.pi/2
+        MAX_ANG = np.pi/2
+
+        N_Parameters = self.N_VonMises * self.NPVM
+        uniform_p = 0.0
+        if Uniform:
+            N_Parameters += 1
+            uniform_p = 0.1
+        in_guess = np.zeros(N_Parameters)
+        Mcons = np.zeros(N_Parameters)
+        bnds = []
+
+        for vmi in range(self.N_VonMises): #p,k,m
+            in_guess[self.NPVM*vmi] = (1.0-uniform_p)/self.N_VonMises
+            in_guess[self.NPVM*vmi+1] = np.array((6.0))
+            in_guess[self.NPVM*vmi+2] = 0.5*(MIN_ANG + (MAX_ANG-MIN_ANG)*vmi/self.N_VonMises)
+            Mcons[self.NPVM*vmi] = 1.0
+            bnds.extend([(0., 1.), (0., 100.), (1.1*MIN_ANG, 1.1*MAX_ANG)])
+        if Uniform:
+            in_guess[-1]=uniform_p
+            Mcons[-1] = 1.0
+            bnds.extend([(0.,1.)])
+
+        cons = ({'type': 'eq', 'fun': lambda x:  np.dot(x,Mcons)-1.0})
+
+        results = sp.optimize.minimize(self.GeneralVMULogLike, in_guess, \
+                            method='SLSQP', bounds=bnds, constraints=cons, \
+                            tol=1e-6, options={'maxiter': 100, 'disp': True})
+
+        if plot:
+            Y=np.zeros_like(self.Angles)
+            p_,kappa_,m_,pu_ = self.collectVMUParameters(results.x)
+            for vmi in range(self.N_VonMises): #p,k,m
+                Y += p_[vmi] * sp.stats.vonmises.pdf( self.Angles, 
+                kappa_[vmi], loc = m_[vmi], scale = 0.5 )
+            if self.Uniform: Y+= pu_*sp.stats.vonmises.pdf( self.Angles, 
+                1.0E-3, loc = 0.0, scale = 0.5 )
+
+            fig = plt.figure()
+            ax=fig.add_subplot(111)
+            ax.bar(np.degrees(self.Angles),self.Intensities,width=1.0) 
+            ax.plot(np.degrees(self.Angles),Y,color="r") 
+            ax.set_xlabel("Angles")
+            ax.set_ylabel("Intensities")
+            plt.show()
+            #plt.close(fig)  
+
+        return self.collectVMUParameters(results.x)        
+
+
+
+
+
+
 # Main ...
 if __name__ == "__main__":
     print("Testing Orientation Analysis")
