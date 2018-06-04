@@ -144,6 +144,35 @@ class CNodes(object):
     def GetNNodes(self):
         return len(self.Mat)
     
+    @staticmethod
+    def _getArrayLabel(root,nf,i,UseLetters=False):
+        letter=['x','y','z']
+        if nf<=3 and UseLetters:
+            lbl=root+letter[i]
+        else:
+            lbl=root+str(i)
+        return lbl
+
+    def AppendArray(self,myarray,root,UseLetters=True):
+        shp=np.shape(myarray)
+        if len(shp)>3:
+            raise ValueError("ERROR: Export bigger than matrix is not implemented.")
+        elif len(shp)==3:
+            nf = shp[1]
+            for i in range(nf):
+                lbl=CNodes._getArrayLabel(root,nf,i,UseLetters=UseLetters)
+                self.AppendVector(myarray[:,i,:],lbl,UseLetters=UseLetters)
+        else:
+            self.AppendVector(myarray,root,UseLetters=UseLetters)
+
+
+    def AppendVector(self,myarray,root,UseLetters=True):
+        shp=np.shape(myarray)
+        nf = shp[1]
+        for i in range(nf):
+            lbl=CNodes._getArrayLabel(root,nf,i,UseLetters=UseLetters)
+            self.AppendField(myarray[:,i],lbl)
+
     def AppendField(self,myarray,lbl,atype=None):
         if atype is not None:
             myarray=np.array(myarray,dtype=atype)
@@ -872,6 +901,57 @@ class MyMesh(object):
             
         self.NSdiheS=self.NSdihe.copy()  
             
+    @staticmethod
+    def IndividualCurvPrincipalDirections(ShapeOperator,NHv):
+        minmax=np.array([[1,2],[0,2],[0,1]])
+        eigs,eigvs= np.linalg.eigh(ShapeOperator)
+        imaxC=np.argmax(np.abs(eigs))
+        izero=np.argmin(np.abs(eigs))
+        imin,imax=minmax[izero]
+        
+        if imaxC==imin:
+            Vmax=eigvs[:,imin]
+            Vmin=np.cross(Vmax,NHv)
+            Vmin/=np.linalg.norm(Vmin)
+        else:
+            Vmin=eigvs[:,imax]
+            Vmax=np.cross(Vmin,NHv)
+            Vmax/=np.linalg.norm(Vmax)
+        Vnor = eigvs[:,izero]
+        # self.NMinCd[n] = eigvs[:,imaxC]
+        # self.NMaxCd[n] = Vmax
+        # self.NMinCd[n] = Vmin
+        # self.NNorCd[n] = eigvs[:,izero]
+        
+        kmin,kmax=eigs[[imin,imax]]
+        # self.Nkmin[n]=kmin
+        # self.Nkmax[n]=kmax
+        # self.NH[n] == (kmin+kmax)/2
+        # self.NK[n] == (kmin*kmax)
+        
+        if kmin>0:
+            Nktype=0
+            alph=np.pi/2
+            VMM1=Vmin
+            VMM2=Vmin
+        elif kmax<0:
+            Nktype=1
+            alph=0.0
+            VMM1=Vmax
+            VMM2=Vmax
+        else: #kmin<0 and kmax>0
+            Nktype=2
+            alph = np.arctan2(np.sqrt(kmax),np.sqrt(-kmin))
+            # print(alph*180/3.1415)
+            VMM1=np.cos(alph)*Vmax+np.sin(alph)*Vmin
+            VMM2=np.cos(alph)*Vmax-np.sin(alph)*Vmin
+        VMM1/=np.linalg.norm(VMM1)
+        VMM2/=np.linalg.norm(VMM2)
+        
+        return Vmax,Vmin,Vnor,kmax,kmin,Nktype,alph,VMM1,VMM2
+
+
+
     def ComputeCurvaturePrincipalDirections(self,usesmooth=True):
         self.NMaxCd = np.zeros((self.NNodes,3),dtype='f8') #PD of max curvature (from diheadral)
         self.NMinCd = np.zeros((self.NNodes,3),dtype='f8') #PD of min curvature (from diheadral)
@@ -888,50 +968,18 @@ class MyMesh(object):
         else:
             ShapeOperator=self.NSdihe
         
-        minmax=[[1,2],[0,2],[0,1]]
         for n in range(self.NNodes):
-            eigs,eigvs= np.linalg.eigh(ShapeOperator[n])
-            imaxC=np.argmax(np.abs(eigs))
-            izero=np.argmin(np.abs(eigs))
-            imin,imax=minmax[izero]
-            
-            if imaxC==imin:
-                Vmax=eigvs[:,imin]
-                Vmin=np.cross(Vmax,self.NHv[n])
-                Vmin/=np.linalg.norm(Vmin)
-            else:
-                Vmin=eigvs[:,imax]
-                Vmax=np.cross(Vmin,self.NHv[n])
-                Vmax/=np.linalg.norm(Vmax)
-            
-            # self.NMinCd[n] = eigvs[:,imaxC]
+            Vmax,Vmin,Vnor,kmax,kmin,Nktype,alph,VMM1,VMM2 = MyMesh.IndividualCurvPrincipalDirections(ShapeOperator[n],self.NHv[n])
+            # if n==268:
+            #     ShapeOperator[n][0,1]=999
             self.NMaxCd[n] = Vmax
             self.NMinCd[n] = Vmin
-            self.NNorCd[n] = eigvs[:,izero]
-            
-            kmin,kmax=eigs[[imin,imax]]
+            self.NNorCd[n] = Vnor
             self.Nkmin[n]=kmin
             self.Nkmax[n]=kmax
-            # self.NH[n] == (kmin+kmax)/2
-            # self.NK[n] == (kmin*kmax)
-            
-            if kmin>0:
-                self.Nktype[n]=0
-                self.Nkang[n]=np.pi/2
-                V=Vmin
-            elif kmax<0:
-                self.Nktype[n]=1
-                self.Nkang[n]=0.0
-                V=Vmax
-            else: #kmin<0 and kmax>0
-                self.Nktype[n]=2
-                alph = np.arctan2(np.sqrt(kmax),np.sqrt(-kmin))
-                self.Nkang[n] = alph
-                # print(alph*180/3.1415)
-                V=np.cos(alph)*Vmax+np.sin(alph)*Vmin
-            V/=np.linalg.norm(V)
-
-            self.NMinMag[n]=V
+            self.Nktype[n]=Nktype
+            self.Nkang[n]=alph
+            self.NMinMag[n]=VMM1
             
     def SmoothCurvatures(self,N=1):
         for _ in range(N): #Smooth N times
@@ -1041,17 +1089,12 @@ class MyMesh(object):
 
         self.NMinMag=VTemp
 
-    def _quickInterp(self,field_lbl,nodes,baris):
-        val=0.0
-        for node,bari in zip(nodes,baris):
-            val+=self.Nodes.Mat[field_lbl][node]*bari
-        return val
 
     def GetAllFieldsForInterpolation(self):
         return [plbl for plbl in self.Nodes.PropTypes.Ltype if not plbl == 'N']
 
     def InterpolateFieldForPoint(self,point,field_lbl,DoZ=False):
-        ret_labels=[]
+        #ret_labels=[]
         ret_values=[]
 
         # Make label list 
@@ -1068,10 +1111,11 @@ class MyMesh(object):
 
         # Collect and interpolate all fields
         for plbl in fieldLabels:
-            ret_labels.append(plbl)
+            #ret_labels.append(plbl)
             ret_values.append(self._quickInterp(plbl,nodes,baris))
 
-        return ret_labels,ret_values
+        #return ret_labels,ret_values
+        return ret_values
 
     @staticmethod
     def _getBaricentricCoordinates(point,P1,P2,P3):
@@ -1086,48 +1130,12 @@ class MyMesh(object):
         l3 = mycross(r12,r2p)*iA
         return l1,1-l1-l3,l3
 
+    def _quickInterp(self,field_lbl,nodes,baris):
+        val=0.0
+        for node,bari in zip(nodes,baris):
+            val+=self.Nodes.Mat[field_lbl][node]*bari
 
-    def _getInterpolatedField(self,point,field_lbl,DoZ=False):
-        XX = point[0]
-        YY = point[1]
-        if DoZ: ZZ = point[2]
-
-        #Get Nodes X,Y,Z
-        NX=self.Nodes.Mat['x']
-        NY=self.Nodes.Mat['y']
-        NZ=self.Nodes.Mat['z']
-
-        #Get distance squared from point to nodes
-        dNodes = (NX-XX)**2+(NY-YY)**2
-        if DoZ: dNodes+=(NZ-ZZ)**2
-        SortedIndex = np.argsort(dNodes)
-
-        # Closest node relative to median distance
-        relative_first_node_distance = dNodes[SortedIndex[0]]/dNodes[SortedIndex[int(len(dNodes)/2)]] #d(0)/d(L/2)
-
-        if  relative_first_node_distance < 1E-10: #Distance very small compared to Median distance
-            return self.Nodes.Mat[field_lbl][SortedIndex[0]]
-
-        else:
-            #Find up to 15 nodes close to point
-            ReasonableSize=min(len(dNodes),15)
-            CloseNodes=SortedIndex[:ReasonableSize]
-            CloseElements = []
-            for el_list in self.NE[CloseNodes]:
-                CloseElements.extend(el_list)
-            CloseElements=np.unique(CloseElements)
-            
-            for e in CloseElements:
-                nodes = self.EN[e]
-                P1,P2,P3 = [np.array([P['x'],P['y']]) for P in self.Nodes.Mat[nodes]]
-                l1,l2,l3 = self._getBaricentricCoordinates(np.array([XX,YY]),P1,P2,P3)
-                if (l1>=0 and l2>=0 and l3>=0 and l1<=1 and l2<=1 and l3<=1): #Is inside Triangle
-                    ll=[l1,l2,l3]
-                    val=0
-                    for i in range(3):
-                        val+=ll[i]*self.Nodes.Mat[field_lbl][nodes[i]]
-                    return val
-
+        return val
 
     def _getInterpolatingProps(self,point,DoZ=False):
         XX = point[0]
