@@ -5,12 +5,16 @@ from __future__ import absolute_import
 
 import numpy as np
 import pandas as pd
+from pandas.plotting import table as pdtable
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 import sys
 import os
 #import MA.ImageProcessing as MAIP
 import MA.Tools as MATL
 import MA.CSV3D as MA3D
 import MA.MeshIO as MAMIO
+import MA.OrientationAnalysis as MAOA
 
 sys.path.append('C:\\Program Files\\VCG\\MeshLab') # MeshLab
 
@@ -181,9 +185,82 @@ def InterpolatePropertiesFromPLY(plyFile_Curvs,csvFile_PointsData,PointsList):
     Data = pd.DataFrame(data=properties, columns=Header)
     Data.to_csv(csvFile_PointsData,index=False)
 
-def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,PointsList):
-    positions = PointsList[:,0]
-    Files=[DirectionalityBase + "_20X_"+ position +"_Fibers.png" for position in PointsList[:,0]]
+def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,PointsDF,BaseAngleFiles=None):
+    WINDOW = "Tukey"
+
+
+    Npoints=len(PointsDF)
+    RESULTS = pd.DataFrame(index=range(Npoints),
+        columns=["Name","Position",
+            "1VM_Weig","1VM_Disp","1VM_Ang","1VM_Weigu",
+            "2VM_Weig1","2VM_Disp1","2VM_Ang1",
+            "2VM_Weig2","2VM_Disp2","2VM_Ang2","2VM_Weigu"])
+    BaseAuxDirFolder = os.path.join(DirectionalityBase+"_FiberAnalysis","")
+    OAnalysis = MAOA.OrientationAnalysis(BaseAngFolder=BaseAngleFiles,OutputRoot=BaseAuxDirFolder,verbose=True)
+    OAnalysis.SetWindowProperties(WType="Tukey",Alpha=0.2,PType="Separable")
+
+    df1VM = pd.DataFrame(index=[0], columns=[
+            "VM Weight (%)","VM Dispersion (k)","VM Angle (deg)","Uniform Weight (%)"])
+    df2VM = pd.DataFrame(index=[0], columns=[
+            "VM1 Weight (%)","VM1 Dispersion (k)","VM1 Angle (deg)",
+            "VM2 Weight (%)","VM2 Dispersion (k)","VM2 Angle (deg)","Uniform Weight (%)"])
+
+    for i in [4]:#range(Npoints):
+        row=PointsDF.iloc[i]
+        name = row["Name"]
+        RESULTS.iloc[i]["Name"]=name
+        position = row["Position"]
+        RESULTS.iloc[i]["Position"]=position
+
+        imgfile = DirectionalityBase + "_20X_"+ position +"_Fibers.png"
+        OAnalysis.SetImage(imgfile)
+        BaseAuxImage= os.path.join(OAnalysis.OutputRoot+"_"+OAnalysis.GetWindowPropName())
+        Results = OAnalysis.ApplyFFT()
+
+        fig, axes = plt.subplots(3, 2, figsize=(8 , 12))
+        axes[0,0].imshow(mpimg.imread(BaseAuxImage+".png"),cmap="Greys_r",)
+        axes[0,0].set_axis_off()
+        axes[0,0].set_title("Windowed Fiber Image")
+        axes[0,1].imshow(mpimg.imread(BaseAuxImage+"_PS.png"),cmap="Greys_r",)
+        axes[0,1].set_axis_off()
+        axes[0,1].set_title("Power Spectrum")
+
+
+        Angles_R,Intensities = Results.GetAI()
+        vmf = MAOA.Fitting(Angles_R,Intensities)
+        p,k,m,u = vmf.FitVMU(1,plot=False)
+        m=np.degrees(m)
+        RESULTS.iloc[i][["1VM_Weig","1VM_Disp","1VM_Ang","1VM_Weigu"]]=[p[0],k[0],m[0],u]
+        vmf.PlotVMU(axes[1,0])
+        axes[1,0].set_title("1 VonMises + Uniform")
+
+        df1VM.iloc[0] = np.round([p[0]*100,k[0],m[0],u*100],2)
+        mytable = axes[2,0].table(cellText=df1VM.values.T, rowLabels=df1VM.columns, colWidths = [0.2], loc='right')
+        mytable.auto_set_font_size(False)
+        mytable.set_fontsize(10)
+        axes[2,0].set_position([-0.05,0.1,0.4,0.33])
+        axes[2,0].axis('off')
+
+        p,k,m,u = vmf.FitVMU(2,plot=False)
+        m=np.degrees(m)
+        RESULTS.iloc[i][["2VM_Weig1","2VM_Disp1","2VM_Ang1"]]=[p[0],k[0],m[0]]
+        RESULTS.iloc[i][["2VM_Weig2","2VM_Disp2","2VM_Ang2"]]=[p[1],k[1],m[1]]
+        RESULTS.iloc[i]["2VM_Weigu"]=u
+        vmf.PlotVMU(axes[1,1])
+        axes[1,1].set_title("2 VonMises + Uniform")
+
+        df2VM.iloc[0] = np.round([p[0]*100,k[0],m[0],p[1]*100,k[1],m[1],u*100],2)
+        mytable = axes[2,1].table(cellText=df2VM.values.T, rowLabels=df2VM.columns, colWidths = [0.2], loc='right')
+        mytable.auto_set_font_size(False)
+        mytable.set_fontsize(10)
+        axes[2,1].set_position([0.4,0.1,0.4,0.33])
+        axes[2,1].axis('off')
+
+        plt.savefig(BaseAuxImage +".pdf")
+
+
+    print(RESULTS)
+        
     
 
 
@@ -223,7 +300,7 @@ def getBaseNameFromFolder(File,Base):
         Base = os.path.join(Folder,root)
     return Base
     
-def MakePLYFromTif(tiffile,Base=None,Force=False):
+def MakePLYFromTif(tiffile,Base=None,ScriptFileName=None,Force=False):
     Base = getBaseNameFromFolder(tiffile,Base)
     plyFile = Base+"_PLY0_Original.ply"
     plyFile_Smooth = Base+"_PLY1_Reduced.ply"
@@ -237,7 +314,7 @@ def MakePLYFromTif(tiffile,Base=None,Force=False):
     # Smooth ply file if input ply is new
     if Force or MATL.IsNew(plyFile,plyFile_Smooth): 
         print("Smoothing and reducing Surface...")
-        SmoothPly(plyFile,plyFile_Smooth)
+        SmoothPly(plyFile,plyFile_Smooth,ScriptFileName=None)
 
     # Make ply with curvature information
     if Force or MATL.IsNew(plyFile_Smooth,plyFile_Curvs):
@@ -246,7 +323,7 @@ def MakePLYFromTif(tiffile,Base=None,Force=False):
 
     return plyFile_Curvs
 
-def ProcessPoints(plyFile_Curvs,PointsDF,Base=None,Force=False):
+def ProcessPoints(plyFile_Curvs,PointsDF,Base=None,Force=False,BaseAngleFiles=None):
     Base = getBaseNameFromFolder(plyFile_Curvs,Base)
     csvFile_PointsIntData = Base+"_Points_Interpolated_Data.csv"
     DirectionalityBase = Base
@@ -263,7 +340,7 @@ def ProcessPoints(plyFile_Curvs,PointsDF,Base=None,Force=False):
     # Compute Directionality from Fiber Images 
     if Force or checkNewFiberImages(DirectionalityBase,csvFile_PointsDirectionality,PointsList):
         print("Compute Directionality for Points Info From Mesh...")
-        ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,PointsList)
+        ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,PointsDF,BaseAngleFiles=BaseAngleFiles)
        
     # Collect Angles from each point 
     if Force or MATL.IsNew(csvFile_PointsIntData,csvFile_PointsResults):
@@ -281,12 +358,13 @@ def DO_EVERYTHING(FoldersNames,THEBASE,Force=False):
              "Position" is the label for position in membrane and "X,Y" are the coordinates
              in 10X membrane coordinates of said points.
     '''
-
-    MakeSmoothMeshlabScript(os.path.join(THEBASE,"MashlabScript"))
+    SmoothScriptFileName=os.path.join(THEBASE,"MashlabScript")
+    MakeSmoothMeshlabScript(SmoothScriptFileName)
     Points=loadPointDataLocations(os.path.join(THEBASE,"Points.csv"))
+    BaseAngleFiles = os.path.join(THEBASE,"BaseAngleFiles")
 
     for FOLD in FoldersNames:
         tiffile = os.path.join(THEBASE,FOLD,FOLD+"_AverageHeight_512_Smooth.tif")
-        plyFile_Curvs = MakePLYFromTif(tiffile,Force=Force)
-        ProcessPoints(plyFile_Curvs,Points[FOLD],Force=Force)
+        plyFile_Curvs = MakePLYFromTif(tiffile,Force=Force,ScriptFileName=SmoothScriptFileName)
+        ProcessPoints(plyFile_Curvs,Points[FOLD],Force=Force,BaseAngleFiles=BaseAngleFiles)
 
