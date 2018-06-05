@@ -66,6 +66,7 @@ class ImageWindow(object):
         # WType - String with type of Windowing (as given by WTypes_Dict)
         # PType - String with partition type (Radial or Separable)
         # Alpha - Float with value of alpha (-1 -> use filter default)
+        # PadShape - Pad Image with zeros so that it ends up with this shape
 
         # Dictionary of Implemented Windowing WTypes:
         # Name -> (Function , Default Alpha)
@@ -540,10 +541,7 @@ class GradientAnalysis(object):
         ANGS,VALS = self.MakeHist()
 
         return ANGS,VALS,self.NameProps    
-        
-        
-
-        
+           
 class OrientationResults(object):
     def __init__(self,X,Y,OutputRoot=None):
         self.X=X
@@ -618,13 +616,11 @@ class OrientationResults(object):
         ax.set_xticks(list(range(int(xmin),int(xmax+2),45)))
         ax.xaxis.grid(True,color='k',linestyle='--', linewidth=0.5)
 
-
-
-
 class Fitting(object):
     def __init__(self,Angles,Intensities):
         self.Angles = Angles
         self.Intensities = Intensities
+        self.results = None
 
     def collectVMUParameters(self,theta):
         # Collect Parameters of Distributions
@@ -670,7 +666,7 @@ class Fitting(object):
         out = (-1.0)*(np.sum( np.multiply( np.log( fm_ ), Intensities_ ) ))
         return out
         
-    def FitVMU(self,N_VonMises=1,Uniform=True,plot=False):
+    def FitVMU(self,N_VonMises=1,Uniform=True):
         self.N_VonMises = N_VonMises
         self.Uniform = Uniform
         self.NPVM = 3 # Number of Von-Mises Parameters
@@ -692,11 +688,11 @@ class Fitting(object):
             in_guess[self.NPVM*vmi+1] = np.array((6.0))
             in_guess[self.NPVM*vmi+2] = 0.5*(MIN_ANG + (MAX_ANG-MIN_ANG)*vmi/self.N_VonMises)
             Mcons[self.NPVM*vmi] = 1.0
-            bnds.extend([(0., 1.), (0., 100.), (MIN_ANG, MAX_ANG)])
+            bnds.extend([(0., 1.), (0.1, 100.), (MIN_ANG, MAX_ANG)])
         if Uniform:
             in_guess[-1]=uniform_p
             Mcons[-1] = 1.0
-            bnds.extend([(0.,0.5)])
+            bnds.extend([(0.,0.8)])
 
         cons = ({'type': 'eq', 'fun': lambda x:  np.dot(x,Mcons)-1.0})
 
@@ -720,28 +716,32 @@ class Fitting(object):
             else:
                 N_it=5
 
+        self.results = self.collectVMUParameters(results.x)  
 
-        if plot:
-            Y=np.zeros_like(self.Angles)
-            p_,kappa_,m_,pu_ = self.collectVMUParameters(results.x)
-            for vmi in range(self.N_VonMises): #p,k,m
-                Y += p_[vmi] * sp.stats.vonmises.pdf( self.Angles, 
-                kappa_[vmi], loc = m_[vmi], scale = 0.5 )
-            if self.Uniform: Y+= pu_*sp.stats.vonmises.pdf( self.Angles, 
-                1.0E-3, loc = 0.0, scale = 0.5 )
+        return self.results        
 
+    def PlotVMU(self,ax=None):
+        Y=np.zeros_like(self.Angles)
+        p_,kappa_,m_,pu_ = self.results
+        for vmi in range(self.N_VonMises): #p,k,m
+            Y += p_[vmi] * sp.stats.vonmises.pdf( self.Angles, 
+            kappa_[vmi], loc = m_[vmi], scale = 0.5 )
+        if self.Uniform: Y+= pu_*sp.stats.vonmises.pdf( self.Angles, 
+            1.0E-3, loc = 0.0, scale = 0.5 )
+
+        axN=False
+        if ax is None:
             fig = plt.figure()
             ax=fig.add_subplot(111)
-            ax.bar(np.degrees(self.Angles),self.Intensities,width=1.0) 
-            ax.plot(np.degrees(self.Angles),Y,color="r") 
-            ax.set_xlabel("Angles")
-            ax.set_ylabel("Intensities")
-            plt.show()
-            #plt.close(fig)  
-
-        return self.collectVMUParameters(results.x)        
-
-
+            axN=True
+        ax.bar(np.degrees(self.Angles),self.Intensities,width=1.0) 
+        ax.plot(np.degrees(self.Angles),Y,color="r")
+        ax.set_xlim([-90,90])
+        ax.set_ylim([0,1.1*max(np.amax(self.Intensities),np.amax(Y))])
+        ax.set_xlabel("Angles")
+        ax.set_ylabel("Intensities")
+        
+        if axN: return fig
 
 
 

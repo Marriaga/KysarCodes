@@ -18,9 +18,9 @@ import MA.OrientationAnalysis as MAOA
 
 sys.path.append('C:\\Program Files\\VCG\\MeshLab') # MeshLab
 
-def checkNewFiberImages(DirectionalityBase,csvFile_PointsDirectionality,PointsList):
+def checkNewFiberImages(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsList):
     for f in [DirectionalityBase + "_20X_" + position + "_Fibers.png" for position in PointsList[:,0]]:
-        if MATL.IsNew(f,csvFile_PointsDirectionality): return True
+        if MATL.IsNew(f,csvFile_PointsDirectionalityResults): return True
     return False 
 
 def loadPointDataLocations(File):
@@ -185,10 +185,7 @@ def InterpolatePropertiesFromPLY(plyFile_Curvs,csvFile_PointsData,PointsList):
     Data = pd.DataFrame(data=properties, columns=Header)
     Data.to_csv(csvFile_PointsData,index=False)
 
-def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,PointsDF,BaseAngleFiles=None):
-    WINDOW = "Tukey"
-
-
+def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsDF,BaseAngleFiles=None):
     Npoints=len(PointsDF)
     RESULTS = pd.DataFrame(index=range(Npoints),
         columns=["Name","Position",
@@ -205,7 +202,7 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,Points
             "VM1 Weight (%)","VM1 Dispersion (k)","VM1 Angle (deg)",
             "VM2 Weight (%)","VM2 Dispersion (k)","VM2 Angle (deg)","Uniform Weight (%)"])
 
-    for i in [4]:#range(Npoints):
+    for i in range(Npoints):
         row=PointsDF.iloc[i]
         name = row["Name"]
         RESULTS.iloc[i]["Name"]=name
@@ -215,6 +212,8 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,Points
         imgfile = DirectionalityBase + "_20X_"+ position +"_Fibers.png"
         OAnalysis.SetImage(imgfile)
         BaseAuxImage= os.path.join(OAnalysis.OutputRoot+"_"+OAnalysis.GetWindowPropName())
+
+        # Change below if you want to use Gradient instead of FFT
         Results = OAnalysis.ApplyFFT()
 
         fig, axes = plt.subplots(3, 2, figsize=(8 , 12))
@@ -258,16 +257,9 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,Points
 
         plt.savefig(BaseAuxImage +".pdf")
 
+    RESULTS.to_csv(csvFile_PointsDirectionalityResults,index=False)
 
-    print(RESULTS)
-        
-    
-
-
-
-
-
-def ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsResults):
+def ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsCurvatureResults):
     Data = pd.read_csv(csvFile_PointsIntData)
     S_Position = CollectArray(Data,'Position')
     V_Coordinates = CollectArray(Data,'',[3])
@@ -287,7 +279,7 @@ def ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsResults):
         Angle_KMinMag2=GetXYAng(VMM2)
         Coord = V_Coordinates[n]
         outdf.loc[n] = [S_Position[n],Coord[0],Coord[1],Angle_KMax,Angle_KMin,Angle_KMinMag1,Angle_KMinMag2,Type]
-    outdf.to_csv(csvFile_PointsResults,index=False)
+    outdf.to_csv(csvFile_PointsCurvatureResults,index=False)
 
 
 ### MASTER FUNCTIONS ###
@@ -327,8 +319,8 @@ def ProcessPoints(plyFile_Curvs,PointsDF,Base=None,Force=False,BaseAngleFiles=No
     Base = getBaseNameFromFolder(plyFile_Curvs,Base)
     csvFile_PointsIntData = Base+"_Points_Interpolated_Data.csv"
     DirectionalityBase = Base
-    csvFile_PointsDirectionality = Base+"_Points_Directionality.csv"
-    csvFile_PointsResults = Base+"_Points_Results.csv"
+    csvFile_PointsDirectionalityResults = Base+"_Points_DirectionalityResults.csv"
+    csvFile_PointsCurvatureResults = Base+"_Points_CurvatureResults.csv"
 
     PointsList = PointsDF[['Position','X','Y']].values
 
@@ -338,14 +330,14 @@ def ProcessPoints(plyFile_Curvs,PointsDF,Base=None,Force=False,BaseAngleFiles=No
         InterpolatePropertiesFromPLY(plyFile_Curvs,csvFile_PointsIntData,PointsList)
 
     # Compute Directionality from Fiber Images 
-    if Force or checkNewFiberImages(DirectionalityBase,csvFile_PointsDirectionality,PointsList):
+    if Force or checkNewFiberImages(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsList):
         print("Compute Directionality for Points Info From Mesh...")
-        ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionality,PointsDF,BaseAngleFiles=BaseAngleFiles)
+        ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsDF,BaseAngleFiles=BaseAngleFiles)
        
     # Collect Angles from each point 
-    if Force or MATL.IsNew(csvFile_PointsIntData,csvFile_PointsResults):
+    if Force or MATL.IsNew(csvFile_PointsIntData,csvFile_PointsCurvatureResults):
         print("Process Interpolated Points Data...")
-        ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsResults)
+        ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsCurvatureResults)
 
     
 def DO_EVERYTHING(FoldersNames,THEBASE,Force=False):
