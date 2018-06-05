@@ -268,11 +268,10 @@ def ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsCurvatureR
     V_H = CollectArray(Data,'H',[3])
 
     NPoints = len(S_Position)
-    outdata = []
     header = ["Position","X","Y","Angle_KMax","Angle_KMin","Angle_KMinMag1","Angle_KMinMag2","Type"]
     outdf = pd.DataFrame(index=np.arange(0, NPoints), columns=header)
     for n in range(NPoints):
-        Vmax,Vmin,Vnor,kmax,kmin,Type,alph,VMM1, VMM2= MAMIO.MyMesh.IndividualCurvPrincipalDirections(T_Shape[n],V_H[n])
+        Vmax,Vmin,Vnor,kmax,kmin,Type,alph,VMM1, VMM2= MAMIO.MyMesh.IndividualCurvPrincipalDirections(T_Shape[n],V_H[n]) # pylint: disable=unused-variable
         Angle_KMax=GetXYAng(Vmax)
         Angle_KMin=GetXYAng(Vmin)
         Angle_KMinMag1=GetXYAng(VMM1)
