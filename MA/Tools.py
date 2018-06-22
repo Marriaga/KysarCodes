@@ -174,18 +174,19 @@ def RunMeshLabScript(Mesh_Path,Script_Path,Output_Path=None,Verbose=False):
     
     SetupOutput(Output_Path)
     cmd = "meshlabserver -i " + Mesh_Path + " -o " + Output_Path + " -s " + Script_Path
-    print(cmd)
+    print("  "+cmd)
     RunProgram(cmd,Verbose)
-    
+    print("  Meshlab Script Finished")
+
 #Run a Shell process
 def RunProgram(cmd,f_print=True):
-	process = subprocess.Popen(cmd,shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-	while process.poll() is None:
-		if f_print:
-			outl = process.stdout.readline().strip()
-			print(outl)
-	
-	if f_print: print(process.stdout.read())
+    process = subprocess.Popen(cmd,shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    while process.poll() is None:
+        outl = process.stdout.readline().strip()
+        if f_print:
+            print(outl)
+    outl=process.stdout.read()
+    if f_print: print(outl)
 
 
 
@@ -270,3 +271,31 @@ def eig33s(A11,A22,A33,A12,A13,A23):
         eig3 = q + 2 * p * np.cos(phi + (2*np.pi/3))
         eig2 = 3 * q - eig1 - eig3     # since trace(A) = eig1 + eig2 + eig3
     return eig1,eig2,eig3    
+
+def ConvertToStructArray(array):
+    ''' Converts a numpy array into a structured array.
+
+    Converts a (m x n) array into an array of length m where each entry is
+    a tuple of length n with the contents of line m of the original array.
+
+    The output is a structured array where each column is called "fx" where
+    x is an integer starting at 0 and ending at (n-1), for each of the columns
+    of the original array, respectively.
+
+    Input: array-like object
+    Output: Numpy structured array
+    '''
+
+    array=np.array(array)
+    dty=array.dtype.name
+    if 'str' in dty:
+        raise ValueError("Undifined array data type (" + dty + "). Check to make sure all entries are of the same type and not strings")
+
+    new_dtype = dty
+    for _ in range(array.shape[1]-1):
+        new_dtype += "," + dty
+
+    return array.view(dtype=new_dtype).copy()
+
+
+

@@ -11,7 +11,7 @@ import MA.Tools as MATL
 class T(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        print("test_MA_PolarizedAngleAnalysis")
+        print("\n === test_MA_PolarizedAngleAnalysis === ")
         cls.temppath = os.path.join("test","temp","")
         #MATL.MakeNewDir(cls.temppath)
   

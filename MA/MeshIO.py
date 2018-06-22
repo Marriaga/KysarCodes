@@ -100,7 +100,7 @@ class MyPropTypes(object):
     def NormEndi(self,Endi):
         for typlbl in self.Ltype:
             typtyp = self.GetType(typlbl)
-            if typtyp[0] in "=<>":
+            if typtyp[0] in "=<>|":
                 typtyp = typtyp[1:]
             typtyp=Endi+typtyp
             self.AddBaseType(typlbl,typtyp)
@@ -144,6 +144,35 @@ class CNodes(object):
     def GetNNodes(self):
         return len(self.Mat)
     
+    @staticmethod
+    def _getArrayLabel(root,nf,i,UseLetters=False):
+        letter=['x','y','z']
+        if nf<=3 and UseLetters:
+            lbl=root+letter[i]
+        else:
+            lbl=root+str(i)
+        return lbl
+
+    def AppendArray(self,myarray,root,UseLetters=True):
+        shp=np.shape(myarray)
+        if len(shp)>3:
+            raise ValueError("ERROR: Export bigger than matrix is not implemented.")
+        elif len(shp)==3:
+            nf = shp[1]
+            for i in range(nf):
+                lbl=CNodes._getArrayLabel(root,nf,i,UseLetters=UseLetters)
+                self.AppendVector(myarray[:,i,:],lbl,UseLetters=UseLetters)
+        else:
+            self.AppendVector(myarray,root,UseLetters=UseLetters)
+
+
+    def AppendVector(self,myarray,root,UseLetters=True):
+        shp=np.shape(myarray)
+        nf = shp[1]
+        for i in range(nf):
+            lbl=CNodes._getArrayLabel(root,nf,i,UseLetters=UseLetters)
+            self.AppendField(myarray[:,i],lbl)
+
     def AppendField(self,myarray,lbl,atype=None):
         if atype is not None:
             myarray=np.array(myarray,dtype=atype)
@@ -157,16 +186,18 @@ class CNodes(object):
         else:
             self.Mat[lbl]=myarray
     
+
     # Takes the Matrix array and creates the Numpy array with the correct data type
     def PutMatrix(self,Matrix,Types=None,isnumbered=False):
         #isnumbered - Flag to indicate that the input matrix is numbered
         Matrix=np.array(Matrix)
         try:
             NN,NF = np.shape(Matrix)
+            Matrix=MATL.ConvertToStructArray(Matrix)
         except ValueError:
             NN = len(Matrix)
             NF = len(Matrix.dtype.names)
-        
+
         # Check data
         if (NF == 1) or (NF == 2 and isnumbered): raise ValueError("1D arrays do not make sense")        
         # Set dtype labels
@@ -189,18 +220,18 @@ class CNodes(object):
         
         # Add numbering of nodes if needed
         if not isnumbered:
-            Matrix=nprec.merge_arrays((np.arange(NN,dtype=self.PropTypes.GetType('N')),Matrix), flatten = True)
-            #Matrix=np.insert(Matrix,0,np.arange(NN,dtype='i4'),axis=1)
+            Numbering = np.arange(NN).view(dtype=[('N', self.PropTypes.GetType('N'))])
+            Matrix=nprec.merge_arrays((Numbering,Matrix), flatten = True)
             
         # Add z=0 for 2D Data    
         if (NF == 2) or (NF == 3 and isnumbered): #Assumed 2D Structure
-            Matrix=nprec.append_fields(Matrix,'z',np.zeros(NN,dtype=self.PropTypes.GetType('z')))
-            #Matrix=np.append(Matrix,np.zeros((NN,1),dtype='f8'),axis=1)
+            ZeroZ = np.zeros(NN).view(dtype=[('z', self.PropTypes.GetType('z'))])
+            Matrix=nprec.merge_arrays((Matrix,ZeroZ), flatten = True)
         
         # Save Matrix
-        Matrix.dtype.names=typelabs
+        Matrix=Matrix.astype(self.PropTypes.GetDtype())
         self.Mat = np.sort(Matrix,order='N')
-        
+
         # Check ordering and starting item
         MN = self.Mat['N']
         if MN[-1]-MN[0]+1 == len(MN):
@@ -227,6 +258,7 @@ class CElements(object):
         Matrix=np.array(Matrix)
         try:
             NN,NF = np.shape(Matrix)
+            Matrix=MATL.ConvertToStructArray(Matrix)
         except ValueError:
             NN = len(Matrix)
             NF = len(Matrix.dtype.names)
@@ -254,11 +286,11 @@ class CElements(object):
 
         # Add numbering of nodes if needed
         if not isnumbered:
-            Matrix=nprec.merge_arrays((np.arange(NN,dtype=self.PropTypes.GetType('N')),Matrix), flatten = True)
-            #Matrix=np.insert(Matrix,0,np.arange(NN,dtype='i4'),axis=1)
+            Numbering = np.arange(NN).view(dtype=[('N', self.PropTypes.GetType('N'))])
+            Matrix=nprec.merge_arrays((Numbering,Matrix), flatten = True)
         
         # Save Matrix
-        Matrix.dtype.names=typelabs
+        Matrix=Matrix.astype(self.PropTypes.GetDtype())
         self.Mat = np.sort(Matrix,order='N')
         
         # Check ordering and starting item
@@ -338,8 +370,7 @@ class PLYIO(BaseIO):
     def ReadHeader(self,fp):
         stage=0
         while True:
-            lvs=fp.readline().rstrip().split()
-            
+            lvs=fp.readline().decode().rstrip().split()
             if lvs[0]=="end_header":
                 break
             
@@ -365,7 +396,7 @@ class PLYIO(BaseIO):
         Nodes = np.empty(self.NNodes,dtype=np.dtype(self.PropTypes.GetDtype()))
         NP = self.PropTypes.GetNProp()
         for i in range(self.NNodes):
-            linelist=fp.readline().strip().split()
+            linelist=fp.readline().decode().strip().split()
             for p in range(NP):
                 Nodes[i][p]=linelist[p]
         self.SetNodes(Nodes,Types=self.PropTypes)
@@ -375,7 +406,7 @@ class PLYIO(BaseIO):
         Elems = np.zeros(self.NElem,dtype=[('p1','i4'),('p2','i4'),('p3','i4')])
         NP = 3
         for i in range(self.NElem):
-            linelist=fp.readline().strip().split()[1:]
+            linelist=fp.readline().decode().strip().split()[1:]
             for p in range(NP):
                 Elems[i][p]=linelist[p]
         self.SetElems(Elems)
@@ -431,11 +462,12 @@ class PLYIO(BaseIO):
         "property list uchar int vertex_indices\n" \
         "end_header\n"
         
-        fp.write(header)
+        fp.write(header.encode())
 
     def WriteArray(self,fp,Array):
         for line in Array:
-            fp.write(" ".join([str(el) for el in line]) + "\n")
+            asciiline = " ".join([str(el) for el in line]) + "\n"
+            fp.write(asciiline.encode())
         
     def WriteNodesASCII(self,fp): 
         NoNLabs=self.PropTypes.Ltype[1:]
@@ -450,8 +482,9 @@ class PLYIO(BaseIO):
         self.WriteArray(fp,TmpElems)
         
     def WriteNodesBinary(self,fp):
-        NoNLabs=self.PropTypes.Ltype[1:]
-        TmpNodes=self.Nodes.Mat[NoNLabs].copy().data
+        NoNLabs = self.PropTypes.Ltype[1:]
+        tmpdtype = self.Nodes.Mat.dtype.descr[1:]
+        TmpNodes = self.Nodes.Mat[NoNLabs].copy().data.astype(tmpdtype)
         TmpNodes.tofile(fp)
         
     def WriteElemsBinary(self,fp):
@@ -506,7 +539,7 @@ class VTUIO(BaseIO):
         self.SetNodeData()
         self.SetElemData()
         
-        with open(vtufile, 'wb') as fp:
+        with open(vtufile, 'w') as fp:
             self.doc.writexml(fp, newl='\n')
     
     def SetPiece(self):
@@ -608,10 +641,10 @@ class MyMesh(object):
         self.IndxL = self.MakeIndexed()
         
         # Neighbours in 1-Ring
-        self.NN = np.empty(self.NNodes,dtype=object)
-        self.NE = np.empty(self.NNodes,dtype=object)
-        self.EN = np.empty(self.NElems,dtype=object)
-        self.EE = np.empty(self.NElems,dtype=object)
+        self.NN = np.empty(self.NNodes,dtype=object) # Nodes near Node (list of nodes that are 1 side away from node)
+        self.NE = np.empty(self.NNodes,dtype=object) # Elements near Node (list of elements touching the node)
+        self.EN = np.empty(self.NElems,dtype=object) # Nodes near Element (list of nodes touching the element)
+        self.EE = np.empty(self.NElems,dtype=object) # Elements near Element (list of elements touching the nodes of the element)
         self.ComputeNeighbours()
         
         # Sides in 1-Ring
@@ -736,12 +769,13 @@ class MyMesh(object):
         #  0-Simple Average
         #  1-Weighted by Area
         #  2-Weighted by Angle
-        if mode==0:
-            def mymode(e,nei): return 1.0
-        if mode==1:
-            def mymode(e,nei): return self.EAreas[e]
-        if mode==2:
-            def mymode(e,nei): return self.EAngs[e,nei]
+        def mymode(e,nei):
+            if mode==0:
+                return 1.0
+            elif mode==1:
+                return self.EAreas[e]
+            elif mode==2:
+                return self.EAngs[e,nei]
 
         self.ENorms = np.empty((self.NElems,3),dtype='f8') #nx,ny,nz
         self.EAngs  = np.empty((self.NElems,3),dtype='f8') #a1,a2,a3
@@ -777,14 +811,12 @@ class MyMesh(object):
         for n in range(self.NNodes):
             self.NNorms[n,:]/=np.linalg.norm(self.NNorms[n,:]) # Normalize Node Normals
 
-    
     def GetCentroid(self,e):
         C=np.zeros(3)
         for P in self.Nodes.Mat[self.EN[e]]:
             C+=[P['x'],P['y'],P['z']]
         return C/3.0    
 
-    
     def ComputeCurvatures(self):    
         self.NAmix  = np.zeros(self.NNodes,dtype='f8') #A
         self.NARing = np.zeros(self.NNodes,dtype='f8') #A
@@ -869,6 +901,57 @@ class MyMesh(object):
             
         self.NSdiheS=self.NSdihe.copy()  
             
+    @staticmethod
+    def IndividualCurvPrincipalDirections(ShapeOperator,NHv):
+        minmax=np.array([[1,2],[0,2],[0,1]])
+        eigs,eigvs= np.linalg.eigh(ShapeOperator)
+        imaxC=np.argmax(np.abs(eigs))
+        izero=np.argmin(np.abs(eigs))
+        imin,imax=minmax[izero]
+        
+        if imaxC==imin:
+            Vmax=eigvs[:,imin]
+            Vmin=np.cross(Vmax,NHv)
+            Vmin/=np.linalg.norm(Vmin)
+        else:
+            Vmin=eigvs[:,imax]
+            Vmax=np.cross(Vmin,NHv)
+            Vmax/=np.linalg.norm(Vmax)
+        Vnor = eigvs[:,izero]
+        # self.NMinCd[n] = eigvs[:,imaxC]
+        # self.NMaxCd[n] = Vmax
+        # self.NMinCd[n] = Vmin
+        # self.NNorCd[n] = eigvs[:,izero]
+        
+        kmin,kmax=eigs[[imin,imax]]
+        # self.Nkmin[n]=kmin
+        # self.Nkmax[n]=kmax
+        # self.NH[n] == (kmin+kmax)/2
+        # self.NK[n] == (kmin*kmax)
+        
+        if kmin>0:
+            Nktype=0
+            alph=np.pi/2
+            VMM1=Vmin
+            VMM2=Vmin
+        elif kmax<0:
+            Nktype=1
+            alph=0.0
+            VMM1=Vmax
+            VMM2=Vmax
+        else: #kmin<0 and kmax>0
+            Nktype=2
+            alph = np.arctan2(np.sqrt(kmax),np.sqrt(-kmin))
+            # print(alph*180/3.1415)
+            VMM1=np.cos(alph)*Vmax+np.sin(alph)*Vmin
+            VMM2=np.cos(alph)*Vmax-np.sin(alph)*Vmin
+        VMM1/=np.linalg.norm(VMM1)
+        VMM2/=np.linalg.norm(VMM2)
+        
+        return Vmax,Vmin,Vnor,kmax,kmin,Nktype,alph,VMM1,VMM2
+
+
+
     def ComputeCurvaturePrincipalDirections(self,usesmooth=True):
         self.NMaxCd = np.zeros((self.NNodes,3),dtype='f8') #PD of max curvature (from diheadral)
         self.NMinCd = np.zeros((self.NNodes,3),dtype='f8') #PD of min curvature (from diheadral)
@@ -885,53 +968,21 @@ class MyMesh(object):
         else:
             ShapeOperator=self.NSdihe
         
-        minmax=[[1,2],[0,2],[0,1]]
         for n in range(self.NNodes):
-            eigs,eigvs= np.linalg.eigh(ShapeOperator[n])
-            imaxC=np.argmax(np.abs(eigs))
-            izero=np.argmin(np.abs(eigs))
-            imin,imax=minmax[izero]
-            
-            if imaxC==imin:
-                Vmax=eigvs[:,imin]
-                Vmin=np.cross(Vmax,self.NHv[n])
-                Vmin/=np.linalg.norm(Vmin)
-            else:
-                Vmin=eigvs[:,imax]
-                Vmax=np.cross(Vmin,self.NHv[n])
-                Vmax/=np.linalg.norm(Vmax)
-            
-            # self.NMinCd[n] = eigvs[:,imaxC]
+            Vmax,Vmin,Vnor,kmax,kmin,Nktype,alph,VMM1,VMM2 = MyMesh.IndividualCurvPrincipalDirections(ShapeOperator[n],self.NHv[n])
+            # if n==268:
+            #     ShapeOperator[n][0,1]=999
             self.NMaxCd[n] = Vmax
             self.NMinCd[n] = Vmin
-            self.NNorCd[n] = eigvs[:,izero]
-            
-            kmin,kmax=eigs[[imin,imax]]
+            self.NNorCd[n] = Vnor
             self.Nkmin[n]=kmin
             self.Nkmax[n]=kmax
-            # self.NH[n] == (kmin+kmax)/2
-            # self.NK[n] == (kmin*kmax)
-            
-            if kmin>0:
-                self.Nktype[n]=0
-                self.Nkang[n]=np.pi/2
-                V=Vmin
-            elif kmax<0:
-                self.Nktype[n]=1
-                self.Nkang[n]=0.0
-                V=Vmax
-            else: #kmin<0 and kmax>0
-                self.Nktype[n]=2
-                alph = np.arctan2(np.sqrt(kmax),np.sqrt(-kmin))
-                self.Nkang[n] = alph
-                # print(alph*180/3.1415)
-                V=np.cos(alph)*Vmax+np.sin(alph)*Vmin
-            V/=np.linalg.norm(V)
-
-            self.NMinMag[n]=V
+            self.Nktype[n]=Nktype
+            self.Nkang[n]=alph
+            self.NMinMag[n]=VMM1
             
     def SmoothCurvatures(self,N=1):
-        for i in range(N): #Smooth N times
+        for _ in range(N): #Smooth N times
             source=self.NSdiheS.copy()
             for n in range(self.NNodes):
                 isb=self.NIsB[n]
@@ -948,7 +999,25 @@ class MyMesh(object):
                 self.NSdiheS[n]=0.5*(S+Sn) #SHOULD BE S+Sn
     
     def ReadjustMinCurvDirections(self,Director_Vector=None,Auto_Director_Vector_Type=0,Make_Zero_Boundary=True,Aux_Director_Vector=None):
-        VTemp=np.zeros_like(self.NMinMag)
+        '''
+            Function to readjust the vectors of minimum curvature.
+
+            Input:
+                Director_Vector (default:None) -- Vector that determines the direction 
+                Auto_Director_Vector_Type (default:0) -- Automatic director vector based on local or global average direction. 
+                Make_Zero_Boundary (default: True) -- No vector on boundary
+                Aux_Director_Vector (default:None) -- Vector that determines the orientation after aligning with the Director_Vector 
+
+            Values for "Auto_Director_Vector_Type". Automatic Computation of Director Vector is based on:
+                0 -- GLOBAL Average direction
+                1 -- 001 - Average direction of        +        + Node
+                2 -- 010 - Average direction of        + 1-Ring +       
+                3 -- 011 - Average direction of        + 1-Ring + Node
+                4 -- 100 - Average direction of 2-Ring +        +       
+                5 -- 101 - Average direction of 2-Ring +        + Node
+                6 -- 110 - Average direction of 2-Ring + 1-Ring +       
+                7 -- 111 - Average direction of 2-Ring + 1-Ring + Node
+        '''
         Compute_Local_Average=False
         Flag_Aux_Director_Vector=False
         
@@ -959,15 +1028,6 @@ class MyMesh(object):
         if Director_Vector is not None:
             Director_Vector=np.array(Director_Vector)
         else: # Automatic Computation of Director Vector
-              # 0 - GLOBAL Average direction
-              # 1 - 001 - Average direction of        +        + Node
-              # 2 - 010 - Average direction of        + 1-Ring +       
-              # 3 - 011 - Average direction of        + 1-Ring + Node
-              # 4 - 100 - Average direction of 2-Ring +        +       
-              # 5 - 101 - Average direction of 2-Ring +        + Node
-              # 6 - 110 - Average direction of 2-Ring + 1-Ring +       
-              # 7 - 111 - Average direction of 2-Ring + 1-Ring + Node
-
             if Auto_Director_Vector_Type == 0:
                 Director_Vector=np.zeros(3)
                 for n in range(self.NNodes):
@@ -979,6 +1039,8 @@ class MyMesh(object):
             else:
                 Compute_Local_Average=True
 
+
+        VTemp=np.zeros_like(self.NMinMag)
         for n in range(self.NNodes): # Go node-by-node to fix vector
             if not (self.NIsB[n] and Make_Zero_Boundary): #Make boundary vectors 0 if desired
                 
@@ -1025,11 +1087,94 @@ class MyMesh(object):
                         if dot_Vb_AuxVec<0: Vb*=-1
                         VTemp[n]=Vb
 
-        self.NMinMag=VTemp         
-            
+        self.NMinMag=VTemp
 
+
+    def GetAllFieldsForInterpolation(self):
+        return [plbl for plbl in self.Nodes.PropTypes.Ltype if not plbl == 'N']
+
+    def InterpolateFieldForPoint(self,point,field_lbl,DoZ=False):
+        #ret_labels=[]
+        ret_values=[]
+
+        # Make label list 
+
+        if type(field_lbl) == type([]):
+            fieldLabels = field_lbl
+        elif field_lbl.lower() =='all': # Get all data
+            fieldLabels = self.GetAllFieldsForInterpolation()
+        else:
+            fieldLabels = [field_lbl]
+
+        # Get interpolation properties
+        nodes,baris = self._getInterpolatingProps(point,DoZ=DoZ)
+
+        # Collect and interpolate all fields
+        for plbl in fieldLabels:
+            #ret_labels.append(plbl)
+            ret_values.append(self._quickInterp(plbl,nodes,baris))
+
+        #return ret_labels,ret_values
+        return ret_values
+
+    @staticmethod
+    def _getBaricentricCoordinates(point,P1,P2,P3):
+        def mycross(r1,r2):
+            return r1[0]*r2[1]-r1[1]*r2[0]
+        r12 = P2-P1
+        r23 = P3-P2
+        r3p = point-P3
+        r2p = point-P2
+        iA = 1/mycross(r12,r23)    
+        l1 = mycross(r23,r3p)*iA   
+        l3 = mycross(r12,r2p)*iA
+        return l1,1-l1-l3,l3
+
+    def _quickInterp(self,field_lbl,nodes,baris):
+        val=0.0
+        for node,bari in zip(nodes,baris):
+            val+=self.Nodes.Mat[field_lbl][node]*bari
+
+        return val
+
+    def _getInterpolatingProps(self,point,DoZ=False):
+        XX = point[0]
+        YY = point[1]
+        if DoZ: ZZ = point[2]
+
+        #Get Nodes X,Y,Z
+        NX=self.Nodes.Mat['x']
+        NY=self.Nodes.Mat['y']
+        NZ=self.Nodes.Mat['z']
+
+        #Get distance squared from point to nodes
+        dNodes = (NX-XX)**2+(NY-YY)**2
+        if DoZ: dNodes+=(NZ-ZZ)**2
+        SortedIndex = np.argsort(dNodes)
+
+        # Closest node relative to median distance
+        relative_first_node_distance = dNodes[SortedIndex[0]]/dNodes[SortedIndex[int(len(dNodes)/2)]] #d(0)/d(L/2)
+
+        if  relative_first_node_distance < 1E-10: #Distance very small compared to Median distance
+            return [SortedIndex[0]],[1.0]
+
+        else:
+            #Find up to 15 nodes close to point
+            ReasonableSize=min(len(dNodes),15)
+            CloseNodes=SortedIndex[:ReasonableSize]
+            CloseElements = []
+            for el_list in self.NE[CloseNodes]:
+                CloseElements.extend(el_list)
+            CloseElements=np.unique(CloseElements)
             
-            
+            for e in CloseElements:
+                nodes = self.EN[e]
+                P1,P2,P3 = [np.array([P['x'],P['y']]) for P in self.Nodes.Mat[nodes]]
+                l1,l2,l3 = self._getBaricentricCoordinates(np.array([XX,YY]),P1,P2,P3)
+                if (l1>=0 and l2>=0 and l3>=0 and l1<=1 and l2<=1 and l3<=1): #Is inside Triangle
+                    return nodes,[l1,l2,l3]
+                         
+
 # def LoadFile(self,FilePath):
     # path,ext = os.path.splitext(FilePath)
     # if ext == ".ply":
