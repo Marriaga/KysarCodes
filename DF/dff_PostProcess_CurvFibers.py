@@ -6,11 +6,17 @@ Created on Sun Jun 10 16:48:26 2018
 @author: df
 """
 
+import os, os.path
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
 
 import pandas as pd
+
+from sklearn import datasets, linear_model
+
+from statsmodels.formula.api import ols
+import seaborn
 
 #myPath = '/Users/df/Documents/myGits/FibersResultsXLSX/'
 #csv_path = myPath + 'Curvature_and_Directionality_Results_T.csv'
@@ -81,10 +87,10 @@ def plot_PDF_1VM_b( FibersT ):
     
     Position = FibersT.Position[0]
     
-    locs = np.radians(FibersT.Ang_1VM)
-    kaps = FibersT.Disp_1VM
-    wvm = FibersT.Weig_1VM
-    wu = FibersT.Weigu_1VM
+    locs = np.radians(FibersT.VM1_Ang)
+    kaps = FibersT.VM1_Conc
+    wvm = FibersT.VM1_Weig
+    wu = FibersT.VM1_Weigu
     
     Angle_KMax = FibersT.Angle_KMax
     Angle_KMin = FibersT.Angle_KMin
@@ -117,7 +123,7 @@ def plot_PDF_1VM_b( FibersT ):
     ax.plot(Angle_KMin, 0.9*yones, '+', color='gray', label='KMin' )
     ax.plot(Angle_KMinMag1, 0.8*yones, '^', markerfacecolor='white', markeredgecolor='b', label='MM1' )
     ax.plot(Angle_KMinMag2, 0.7*yones, 'v', markerfacecolor='white', markeredgecolor='g', label='MM2' )
-    ax.plot(FibersT.Ang_1VM, wvm, 'o', color='red', label='1VM' )
+    ax.plot(FibersT.VM1_Ang, wvm, 'o', color='red', label='1VM' )
     
     #ax.legend(loc=9)
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), \
@@ -130,13 +136,13 @@ def plot_PDF_2VM_b( FibersT ):
     
     Position = FibersT.Position[0]
     
-    locs1 = np.radians(FibersT.Ang1_2VM)
-    kaps1 = FibersT.Disp1_2VM
-    wvm1 = FibersT.Weig1_2VM
-    locs2 = np.radians(FibersT.Ang2_2VM)
-    kaps2 = FibersT.Disp2_2VM
-    wvm2 = FibersT.Weig2_2VM
-    wu = FibersT.Weigu_2VM
+    locs1 = np.radians(FibersT.VM2_Ang1)
+    kaps1 = FibersT.VM2_Conc1
+    wvm1 = FibersT.VM2_Weig1
+    locs2 = np.radians(FibersT.VM2_Ang2)
+    kaps2 = FibersT.VM2_Conc2
+    wvm2 = FibersT.VM2_Weig2
+    wu = FibersT.VM2_Weigu
     
     Angle_KMax = FibersT.Angle_KMax
     Angle_KMin = FibersT.Angle_KMin
@@ -172,8 +178,8 @@ def plot_PDF_2VM_b( FibersT ):
     ax.plot(Angle_KMin, 0.9*yones, '+', color='gray', label='KMin' )
     ax.plot(Angle_KMinMag1, 0.8*yones, '^', markerfacecolor='white', markeredgecolor='b', label='MM1' )
     ax.plot(Angle_KMinMag2, 0.7*yones, 'v', markerfacecolor='white', markeredgecolor='g', label='MM2' )
-    ax.plot(FibersT.Ang1_2VM, FibersT.Weig1_2VM, 's', color='red', label='2VM-1' )
-    ax.plot(FibersT.Ang2_2VM, FibersT.Weig2_2VM, 'o', color='m', label='2VM-2' )
+    ax.plot(FibersT.VM2_Ang1, FibersT.VM2_Weig1, 's', color='red', label='2VM-1' )
+    ax.plot(FibersT.VM2_Ang2, FibersT.VM2_Weig2, 'o', color='m', label='2VM-2' )
     
     #ax.legend(loc=9)
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), \
@@ -184,44 +190,55 @@ def plot_PDF_2VM_b( FibersT ):
 def plot_alpha_disp( FibersTable, Position=None ):
         
     fig, ax = plt.subplots(1, 1, figsize=(9,6))
-    titl = 'Dispersion vs Alpha for modle 1VMU'
+    titl = 'concentration vs Alpha for modle 1VMU'
     ax.set_title(titl)
-    ax.set_xlabel('max(alpha,90-alpha)', fontsize=12)
-    ax.set_ylabel('Dispersion', fontsize=12)
+    ax.set_xlabel('min(alpha,90-alpha)', fontsize=12)
+    ax.set_ylabel('concentration', fontsize=12)
     for pos in Position:
-        beta = FibersTable.beta2[FibersTable.Position==pos]
-        dispersion = FibersTable.VM1_d[FibersTable.Position==pos]
-        #ax.plot(beta, dispersion, 'o', label=pos )
-        sizes = 100*np.array(FibersTable.Weig_1VM[FibersTable.Position==pos])
-        ax.scatter(beta, dispersion, s=sizes, alpha=0.5, label=pos )
+        beta = FibersTable.beta[FibersTable.Position==pos]
+        concentration = FibersTable.VM1_Conc[FibersTable.Position==pos]
+        #ax.plot(beta, concentration, 'o', label=pos )
+        sizes = 100*np.array(FibersTable.VM1_Weig[FibersTable.Position==pos])
+        ax.scatter(beta, concentration, s=sizes, alpha=0.5, label=pos )
     #ax.legend()
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), \
               fancybox=True, shadow=True, ncol=6)
     
     fig2, ax2 = plt.subplots(2, 3, figsize=(9,6))
-    #titl = 'Dispersion vs Alpha for modle 1VMU'
+    #titl = 'concentration vs Alpha for modle 1VMU'
     #ax.set_title(titl)
     #ax.set_xlabel('max(alpha,90-alpha)', fontsize=12)
-    #ax.set_ylabel('Dispersion', fontsize=12)
+    #ax.set_ylabel('concentration', fontsize=12)
     ii = [0, 0, 0, 1, 1]
     jj = [0, 1, 2, 0, 1]
     k1 = 0
     for pos in Position:
-        beta = FibersTable.beta2[FibersTable.Position==pos]
-        dispersion = FibersTable.VM1_d[FibersTable.Position==pos]
-        #ax.plot(beta, dispersion, 'o', label=pos )
-        sizes = 100*np.array(FibersTable.Weig_1VM[FibersTable.Position==pos])
-        ax2[ii[k1],jj[k1]].scatter(beta, dispersion, s=sizes, alpha=0.5, label=pos )
+        beta = FibersTable.beta[FibersTable.Position==pos]
+        concentration = FibersTable.VM1_Conc[FibersTable.Position==pos]
+        #ax.plot(beta, concentration, 'o', label=pos )
+        sizes = 100*np.array(FibersTable.VM1_Weig[FibersTable.Position==pos])
+        ax2[ii[k1],jj[k1]].scatter(beta, concentration, s=sizes, alpha=0.5, label=pos )
+        
+        # Create linear regression object
+        regr = linear_model.LinearRegression()
+        # Train the model using the training sets
+        X = np.asarray(beta).reshape(len(beta),1)
+        Y = np.asarray(concentration).reshape(len(concentration),1)
+        regr.fit(X, Y)
+        # Plot outputs
+        ax2[ii[k1],jj[k1]].plot(X, regr.predict(X), linewidth=2 )
+                
         ax2[ii[k1],jj[k1]].legend()
+        
         k1 += 1
     #ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), \
      #         fancybox=True, shadow=True, ncol=6)
 
 #%%
-def plot_curvratio_disp( FibersTable, Position=None,xtype="ratio",ytype="dispersion",th=100):
+def plot_curvratio_disp( FibersTable, Position=None,xtype="ratio",ytype="concentration",th=100):
         
     fig, ax = plt.subplots(1, 1, figsize=(9,6))
-    titl = 'Dispersion vs Alpha for modle 1VMU'
+    titl = ytype + ' vs ' + xtype + ' for modle 1VMU'
     ax.set_title(titl)
     maxx=0
     maxy=0
@@ -231,7 +248,7 @@ def plot_curvratio_disp( FibersTable, Position=None,xtype="ratio",ytype="dispers
         curvr=[]
         for mmax,mmin in zip(kmax,kmin):
             curvr.append(min(mmax,mmin)/max(mmax,mmin))
-        beta = FibersTable.beta2[FibersTable.Position==pos]
+        beta = FibersTable.beta[FibersTable.Position==pos]
         
         if xtype=="ratio": #use ratio
             XX=curvr
@@ -241,36 +258,48 @@ def plot_curvratio_disp( FibersTable, Position=None,xtype="ratio",ytype="dispers
             XX=np.arctan(np.sqrt(curvr))*180/3.1415
         
         
-        dispersion = FibersTable.VM1_d[FibersTable.Position==pos]
+        concentration = FibersTable.VM1_Conc[FibersTable.Position==pos]
         
-        if ytype=="dispersion": #Use Concentration
-            YY=dispersion
-        elif ytype=="concentration":
-            YY=1/dispersion
-        elif ytype=="normdisp":
-            YY=dispersion/np.array(FibersTable.Weig_1VM[FibersTable.Position==pos])
+        if ytype=="concentration": #Use Concentration
+            YY=concentration
+        elif ytype=="dispersion":
+            YY=1/concentration
+        elif ytype=="normconc":
+            YY=concentration/np.array(FibersTable.VM1_Weig[FibersTable.Position==pos])
         
         #ax.plot(beta, dispersion, 'o', label=pos )
-        sizes = 100*np.array(FibersTable.Weig_1VM[FibersTable.Position==pos])
+        sizes = 100*np.array(FibersTable.VM1_Weig[FibersTable.Position==pos])
         sizes[sizes>th]=sizes[sizes>th]*0.0
 
         ax.scatter(XX, YY, s=sizes, alpha=0.5, label=pos )
         maxx=max(maxx,max(XX))
         maxy=max(maxy,max(YY[sizes>0]))
+        
+        # Create linear regression object
+        regr = linear_model.LinearRegression()
+        # Train the model using the training sets
+        X = np.asarray(XX).reshape(len(XX),1)
+        Y = np.asarray(YY).reshape(len(YY),1)
+        regr.fit(X, Y)
+        # Plot outputs
+        ax.plot(X, regr.predict(X), linewidth=2 )
+                
     ax.set_xlabel(xtype, fontsize=12)
     ax.set_ylabel(ytype, fontsize=12)
-    ax.set_xlim([0,maxx])
-    ax.set_ylim([0,maxy])
+    ax.set_xlim([-0.02*maxx,1.05*maxx])
+    ax.set_ylim([-0.02*maxy,1.05*maxy])
     #ax.legend()
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), \
               fancybox=True, shadow=True, ncol=6)
+        
+    return fig, ax
 
 
 #%%
 def plot_angles_1VMU( FibersTable, Position=None ):
     
     pos = Position
-    locs = FibersTable.Ang_1VM[FibersTable.Position==pos]
+    locs = FibersTable.VM1_Ang[FibersTable.Position==pos]
     Angle_KMax = FibersTable.Angle_KMax[FibersTable.Position==pos]
     Angle_KMin = FibersTable.Angle_KMin[FibersTable.Position==pos]
     Angle_KMinMag1 = FibersTable.Angle_KMinMag1[FibersTable.Position==pos]
@@ -302,13 +331,13 @@ def plot_angles_1VMU( FibersTable, Position=None ):
 def scatter_angles_1VMU( FibersTable, Position=None ):
     
     pos = Position
-    locs = FibersTable.Ang_1VM[FibersTable.Position==pos]
+    locs = FibersTable.VM1_Ang[FibersTable.Position==pos]
     Angle_KMax = FibersTable.Angle_KMax[FibersTable.Position==pos]
     Angle_KMin = FibersTable.Angle_KMin[FibersTable.Position==pos]
     Angle_KMinMag1 = FibersTable.Angle_KMinMag1[FibersTable.Position==pos]
     Angle_KMinMag2 = FibersTable.Angle_KMinMag2[FibersTable.Position==pos]
     
-    sizes = 10*np.array(FibersTable.VM1_d[FibersTable.Position==pos])
+    sizes = 10*np.array(FibersTable.VM1_Conc[FibersTable.Position==pos])
     
     fig, ax = plt.subplots(1, 1, figsize=(9,6))
     titl = 'Model location vs Curvature angles - ' + Position
@@ -338,14 +367,14 @@ def scatter_angles_RWM( FibersTable, RWM=None ):
     #rwm = FibersTable.Name[FibersTable.Name==RWM][0]
     rwm = RWM
     print(rwm)
-    locs = FibersTable.Ang_1VM[FibersTable.Name==rwm]
+    locs = FibersTable.VM1_Ang[FibersTable.Name==rwm]
     Angle_KMax = FibersTable.Angle_KMax[FibersTable.Name==rwm]
     Angle_KMin = FibersTable.Angle_KMin[FibersTable.Name==rwm]
     Angle_KMinMag1 = FibersTable.Angle_KMinMag1[FibersTable.Name==rwm]
     Angle_KMinMag2 = FibersTable.Angle_KMinMag2[FibersTable.Name==rwm]
     
-    summ = sum(np.array(FibersTable.VM1_d[FibersTable.Name==rwm]))
-    sizes = 300*np.array(FibersTable.VM1_d[FibersTable.Name==rwm])/summ
+    summ = sum(np.array(FibersTable.VM1_Conc[FibersTable.Name==rwm]))
+    sizes = 300*np.array(FibersTable.VM1_Conc[FibersTable.Name==rwm])/summ
     
     fig, ax = plt.subplots(1, 1, figsize=(9,6))
     titl = 'Model location vs Curvature angles - RWM: ' + rwm
@@ -379,7 +408,7 @@ def scatter_angles_RWM( FibersTable, RWM=None ):
     for pos, m in zip(Position, marks):
         print('Position: ',pos)
         poss = FibersTable.Position==pos
-        aloc = np.array(FibersTable.Ang_1VM[membrane & poss])
+        aloc = np.array(FibersTable.VM1_Ang[membrane & poss])
         if len(aloc):
             aKMax = np.array(FibersTable.Angle_KMax[membrane & poss])
             aKMin = np.array(FibersTable.Angle_KMin[membrane & poss])
@@ -429,8 +458,11 @@ plot_PDF_1VM_b( FibersC )
 plot_PDF_2VM_b( FibersC )
 
 #%% alpha vs dispersion:
+# load the results data: 
+myPath = '/Users/df/Documents/myGits/FibersResultsXLSX/'
+#ALL_file = myPath + 'Curvature_and_Directionality_Results_ALL.xlsx'
+ALL_file = myPath + 'Processing.xlsx'
 
-ALL_file = myPath + 'Curvature_and_Directionality_Results_ALL.xlsx'
 FibersALL = pd.read_excel(ALL_file, index_col=None)
 
 #Position = FibersALL.Position[FibersALL.Position=='Top']
@@ -444,7 +476,18 @@ plot_alpha_disp( FibersALL, Position )
 #plot_alpha_disp( FibersALL, Position=('Left','') )
 #plot_alpha_disp( FibersALL, Position=('Center','') )
 
-plot_curvratio_disp( FibersALL, Position,  )
+#plot_curvratio_disp( FibersALL, Position,  )
+
+#%%
+temp_path, im_name = os.path.split(ALL_file)
+im_name_0 = os.path.splitext(ALL_file)[0]
+xtypes = ("ratio", "beta", "angratio" )
+ytypes = ("concentration", "dispersion", "normconc")
+for xty in xtypes:
+    for yty in ytypes:
+        FIG, AxFIG = plot_curvratio_disp( FibersALL, Position, xtype=xty, ytype=yty, th=100)
+        fig_name_path = im_name_0 + '_' + xty + '_' + yty + '.png'
+        FIG.savefig(fig_name_path)
 
 #%% per membrane, to correlate the angles: 
 
@@ -462,8 +505,63 @@ for pos in Position:
 
 rwms = pd.unique(FibersALL.Name)
 for rwm in pd.unique(FibersALL.Name):
-    print(rwm)
+    #print(rwm)
     scatter_angles_RWM( FibersALL, RWM=rwm )
+
+#%% playing with Ordinary Least Squares (OLS) of stamodels module: 
+#from statsmodels.formula.api import ols
+
+x = np.linspace(-5, 5, 20)
+np.random.seed(1)
+y = -5 + 3*x + 4*np.random.normal(size=x.shape)
+data = pd.DataFrame({'x':x, 'y':y})
+model = ols("y ~ x", data).fit()
+print(model.summary())
+
+#%%
+#import seaborn
+seaborn.pairplot(data, vars=['x', 'y'], kind='reg')
+
+seaborn.lmplot(y='y', x='x', data=data)
+
+seaborn.lmplot(y='VM1_Conc', x='beta', data=FibersALL)
+
+#%%
+Position = ('Top','Bottom','Right','Left','Center')
+
+for pos in Position:
+    temp_DF = pd.DataFrame({'VM1_Conc': FibersALL.VM1_Conc[FibersALL.Position==pos], \
+                       'beta': FibersALL.beta[FibersALL.Position==pos]})
+    #temp_DF = temp_DF[['VM1_Conc', 'beta']]
+    
+    seaborn.lmplot(y='VM1_Conc', x='beta', data=temp_DF).set(xlim=(-1, 46), xticks=np.arange(0,50,5)).set(title=pos)
+    temp_model = ols("VM1_Conc ~ beta", temp_DF).fit()
+    print('----------------------- \n *********************** \n -----------------------')
+    print('OLS results for ' + pos + ':\n', temp_model.summary())
+
+#%%
+#gdd = seaborn.PairGrid(FibersALL, y_vars=["VM1_Conc"], x_vars=["beta", "Position"], size=4)
+#gdd.map(seaborn.regplot, color=".3")
+#gdd.set(ylim=(-1, 11), yticks=[0, 5, 10]);
+#
+#gsd = seaborn.PairGrid(FibersALL, y_vars=["VM1_Conc"], x_vars=["beta"], size=4).map(seaborn.regplot, color=".3")
+#
+seaborn.lmplot(y='VM1_Conc', x='beta', data=FibersALL, hue='Position')
+# to take a quick look at a dataset, it can be easier to use pairplot(): 
+seaborn.pairplot(FibersALL, vars=['beta', 'VM1_Conc'], kind='reg')
+#seaborn.pairplot(FibersALL, hue="Position", size=2.5);
+#
+seaborn.PairGrid(FibersALL, y_vars=["VM1_Conc"], x_vars=["beta", "beta"], hue='Position', size=4).map(seaborn.regplot, color=".3")
+#
+seaborn.PairGrid(FibersALL, y_vars=["VM1_Conc"], x_vars=["beta", "beta"], hue='Position', size=4).map(seaborn.regplot )
+#
+seaborn.lmplot(y='Angle_KMinMag1', x='VM1_Ang', data=FibersALL, hue='Position')
+seaborn.lmplot(y='Angle_KMinMag1', x='VM1_Ang', data=FibersALL)
+#
+seaborn.PairGrid(FibersALL, y_vars=['VM1_Ang'], x_vars=['Angle_KMax', 'Angle_KMin', 'Angle_KMinMag1', 'Angle_KMinMag2', 'VM1_Ang'], hue='Position', size=4).map(seaborn.regplot ).add_legend();
+seaborn.pairplot(FibersALL, vars=['VM1_Ang', 'Angle_KMax', 'Angle_KMin', 'Angle_KMinMag1', 'Angle_KMinMag2'], kind='reg', hue='Position')
+seaborn.pairplot(FibersALL, vars=['VM1_Ang', 'Angle_KMax', 'Angle_KMin', 'Angle_KMinMag1', 'Angle_KMinMag2'], kind='reg')
+seaborn.PairGrid(FibersALL, y_vars=['VM1_Ang'], x_vars=['Angle_KMax', 'Angle_KMin', 'Angle_KMinMag1', 'Angle_KMinMag2', 'VM1_Ang'], hue='Position', size=4).map(plt.scatter, s=50, edgecolor="white" ).add_legend();
 
 #%%
 ## the 1VMU model: 
