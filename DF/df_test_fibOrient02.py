@@ -30,6 +30,8 @@ from scipy import optimize
 from scipy import stats
 import pandas as pd
 
+import GOFTests as DFGOF
+
 # ------------------------------------------------------------------------- #
 # define the path where the images are imported from:
 # im_dir = '/Users/df/0_myDATA/testSamples/'
@@ -274,3 +276,32 @@ print('---------------------------------------------------')
 print('----  The table with the Goodness-of-Fit tests ----')
 print('---------------------------------------------------')
 print(dataFrameGOF)
+
+
+
+fit_object = MAOA.Fitting( np.radians(ResultsFFT.X), np.radians(ResultsFFT.Y) )
+
+fit_results = fit_object.FitVMU( N_VonMises=1, Uniform=True )
+
+print('print 1: ', fit_object.results)
+print('print 2: ', fit_object.N_VonMises)
+print('print 3: ', fit_object.Uniform)
+
+# ---------------------------------------------------------------------- #
+#%% Testing the class to compute the Goodness-Of-Fit Tests:  
+
+# create an object from the GOFTests class:
+#gofTests = DFGOF.GOFTests( angles, values )
+gofTests = DFGOF.GOFTests( fit_object )
+
+# compute the R2 coefficient: 
+R2_GOF = gofTests.R2_GOF()
+
+# generate the gof_results: 
+ResultsGOF = gofTests.collect_gof_results()
+
+# show the gof_results: 
+gofTests.gof_results
+
+fit_object.PlotVMU()
+
