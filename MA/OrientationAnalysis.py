@@ -620,7 +620,18 @@ class Fitting(object):
     def __init__(self,Angles,Intensities):
         self.Angles = Angles
         self.Intensities = Intensities
-        self.results = None
+        self.parameters = None
+        self.gofresults = None
+
+    def getParameters(self):
+        return self.parameters
+
+    def getGOF(self):
+        self.computeGOF()
+        return self.gofresults
+
+    # ======= #
+    # Von-Mises Fitting
 
     def collectVMUParameters(self,theta):
         # Collect Parameters of Distributions
@@ -716,13 +727,13 @@ class Fitting(object):
             else:
                 N_it=5
 
-        self.results = self.collectVMUParameters(results.x)  
+        self.parameters = self.collectVMUParameters(results.x)  
 
-        return self.results        
+        return self.parameters        
 
     def PlotVMU(self,ax=None):
         Y=np.zeros_like(self.Angles)
-        p_,kappa_,m_,pu_ = self.results
+        p_,kappa_,m_,pu_ = self.parameters
         for vmi in range(self.N_VonMises): #p,k,m
             Y += p_[vmi] * sp.stats.vonmises.pdf( self.Angles, 
             kappa_[vmi], loc = m_[vmi], scale = 0.5 )
@@ -743,7 +754,16 @@ class Fitting(object):
         
         if axN: return fig
 
+    # ======= #
+    # GOF tests (Dimitris Code)
 
+    def computeGOF(self):
+        pass
+
+        #self.gofresults = ...
+
+    def KuiperGof(self):
+        pass
 
 
 # Main ...
