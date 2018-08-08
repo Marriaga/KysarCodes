@@ -6,24 +6,42 @@ Author Dimitrios Fafalis
 
 Contents of the package:
     
-    Import this package as: DFGOF or GOF
-    
-    class GOFTests:
+    Import this package as:
         
-    containing the following
+        import DF.GOFTests as DFGOF (or GOF)
     
-    A. methods:
-    -------------------------   
+    The package contains one class: 
+        
+        "class GOFTests()"
+    
+    Create an instance of this class as follows: 
+        
+        gofTests_instance = DFGOF.GOFTests( fit_object )
+        
+        where "fit_object" is the instance of the class: 
+            
+            MA.OrientationAnalysis.Fitting()
+            
+            updated with the results from the distribution fitting using: 
+                
+                "fit_object.FitVMU"
+                
+                "FitVMU" is an instance method of class "Fitting" above.
+        
+    The class "GOFTests" contains the following instance methods: 
+    
+    A. specific statistical methods (pre/post-processing of data):
+    --------------------------------------------------------------  
     1. Get_PDF_VMU
     2. Get_CDF_VMU
     3. makePoints
     4. CDFX
     5. ECDF
     
-    B. Goodness-of-fit tests: 
-    -------------------------
-    1. watson_CDF
-    2. watson_GOF
+    B. Methods for Goodness-of-fit tests: 
+    -------------------------------------
+    1. Watson_CDF
+    2. Watson_GOF
     3. Kuiper_CDF
     4. Kuiper_GOF
     5. myR2
@@ -48,7 +66,7 @@ class GOFTests():
 #    def __init__( self, Angles, Intensities ):
         self.Angles = fit_object.Angles
         self.Intensities = fit_object.Intensities
-        self.results = fit_object.results
+        self.results = fit_object.parameters
         self.N_VonMises = fit_object.N_VonMises
         self.Uniform = fit_object.Uniform
         self.gof_results = None
@@ -66,7 +84,7 @@ class GOFTests():
             self.gof_results
         """
         
-        watson_data = self.watson_GOF( alphal=2 )
+        watson_data = self.Watson_GOF( alphal=2 )
         
         kuiper_data = self.Kuiper_GOF( )
         
@@ -74,14 +92,15 @@ class GOFTests():
         
         # if you want to keep only the common columns from the data frames
         #   of the tests: 
-#        names_ = ['GOFTest', 'Statistic', 'Symbol', 'CriticalValue','PValue', \
-#                  'SignifLevel', 'Decision']
-#        
+        names_ = ['GOFTest', 'Symbol', 'Statistic', 'CriticalValue','PValue', \
+                  'SignifLevel', 'Decision']
+        
 #        self.gof_results = pd.concat([watson_data, kuiper_data, r2_data], \
 #                                     axis=0, join='inner', names=names_)
         
         # or concatenate all columns, the default way concat works: 
         self.gof_results = pd.concat([watson_data, kuiper_data, r2_data])
+        self.gof_results = self.gof_results[names_]
         
         return self.gof_results
         
@@ -100,15 +119,15 @@ class GOFTests():
         """
         pdf_vmu = np.zeros_like(self.Angles)
         p_, kappa_, m_, pu_ = self.results
-        print(p_, kappa_, m_, pu_)
+        #print(p_, kappa_, m_, pu_)
         for vmi in range( self.N_VonMises ): # p, k, m 
             pdf_vmu += p_[vmi] * sp.stats.vonmises.pdf( x, kappa_[vmi], \
                                                  loc = m_[vmi], scale = 0.5 )
-            
+        
         if self.Uniform:
             pdf_vmu += pu_ * sp.stats.vonmises.pdf( x, 1.0E-3, \
                                                     loc = 0.0, scale = 0.5 )
-            
+        
         return pdf_vmu
         
     # ---------------------------------------------------------------------- #
@@ -190,7 +209,7 @@ class GOFTests():
         Function to get the CDF of FITTED or EXPECTED distribution 
             over the observed x-axis points.
         Called in methods:
-            'watson_GOF' 
+            'Watson_GOF' 
             'Kuiper_GOF' 
         Parameters:
         -----------
@@ -214,7 +233,7 @@ class GOFTests():
     
     # ---------------------------------------------------------------------- #
     # instance method: 
-    def watson_CDF( self, x ):
+    def Watson_CDF( self, x ):
         """
         Function to return the value of the CDF of the asymptotic Watson 
         distribution at x: 
@@ -224,6 +243,16 @@ class GOFTests():
         Returns:
         --------
             y: (scalar) the CDF of asymptotic Watson computed at x.
+        References: 
+        ----------
+            1. Equation (6.3.37) of:
+                Mardia K. V., Jupp P. E., (2000)
+                "Directional Statistics", Wiley.
+                ISBN: 0-471-95333-4 
+            2. Equation (7.2.10) of:
+                Jammalamadaka S. Rao, SenGupta A. (2001), 
+                "Topics in Circular Statistics", World Scientific.
+                ISBN: 981-02-3778-2 
         """
         epsi = 1e-10
                 
@@ -236,12 +265,12 @@ class GOFTests():
             k += 1
             asum = abs(md)
             
-        print('Watson k iterations =',k)
+        #print('Watson k iterations =',k)
         return y
     
     # ---------------------------------------------------------------------- #
     # instance method: 
-    def watson_GOF( self, alphal=2 ):
+    def Watson_GOF( self, alphal=2 ):
         """
         From Book: "Applied Statistics: Using SPSS, STATISTICA, MATLAB and R"
                     by J. P. Marques de Sa, Second Edition
@@ -262,6 +291,16 @@ class GOFTests():
         Returns:
         --------
             Watson_gof_results: dataFrame collecting the above.
+        References: 
+        ----------
+            1. Equations (6.3.34), (6.3.36) of:
+                Mardia K. V., Jupp P. E., (2000)
+                "Directional Statistics", Wiley.
+                ISBN: 0-471-95333-4 
+            2. Equation (7.2.8) of:
+                Jammalamadaka S. Rao, SenGupta A. (2001), 
+                "Topics in Circular Statistics", World Scientific.
+                ISBN: 981-02-3778-2 
         """
         
         V = self.CDFX()
@@ -270,9 +309,11 @@ class GOFTests():
         cc = np.arange(1., 2*n, 2)
         
         # The Watson's statistic: 
+        # Eq. (6.3.34) of Ref. [1]: 
         U2 = np.dot(V, V) - np.dot(cc, V)/n + n*(1./3. - (Vb - 0.5)**2.)
         
         # The modified Watson's statistic (when both loc and kappa are known): 
+        # Eq. (6.3.36) of Ref. [1]: 
         Us = (U2 - 0.1/n + 0.1/n**2)*(1.0 + 0.8/n)
         
         alpha_lev = np.array([0.1, 0.05, 0.025, 0.01, 0.005])
@@ -310,8 +351,8 @@ class GOFTests():
             uc = c1 + (n - n1)*(c2 - c1)/(n2 - n1)
         
         # compute the p-values: 
-        pval2 = self.watson_CDF( U2 )
-        pvals = self.watson_CDF( Us )
+        pval2 = self.Watson_CDF( U2 )
+        pvals = self.Watson_CDF( Us )
         
         if U2 < uc:
             H0_W = "Do not reject"
@@ -324,7 +365,7 @@ class GOFTests():
                                            'StatisticStar': Us, \
                                            'CriticalValue': uc, \
                                            'PValue': pval2, \
-                                           'PValueStar': pvals, \
+                                           'ModifiedPValue': pvals, \
                                            'SignifLevel': alpha_lev[alphal], \
                                            'Decision': [H0_W]})
         
@@ -332,7 +373,7 @@ class GOFTests():
                                                  'Symbol', \
                                                  'StatisticStar', \
                                                  'CriticalValue','PValue', \
-                                                 'PValueStar', 'SignifLevel', \
+                                                 'ModifiedPValue', 'SignifLevel', \
                                                  'Decision']]
     
         return Watson_gof_results
@@ -351,6 +392,16 @@ class GOFTests():
         Returns:
         --------
             y: (scalar) the CDF of asymptotic Kuiper computed at x.
+        References: 
+        ----------
+            1. Equation (6.3.29) of:
+                Mardia K. V., Jupp P. E., (2000)
+                "Directional Statistics", Wiley.
+                ISBN: 0-471-95333-4 
+            2. Equation (7.2.6) of:
+                Jammalamadaka S. Rao, SenGupta A. (2001), 
+                "Topics in Circular Statistics", World Scientific.
+                ISBN: 981-02-3778-2 
         """
         epsi = 1e-10
         
@@ -367,7 +418,7 @@ class GOFTests():
             k += 1
             asum = abs(md1+md2)
             
-        print('Kuiper k iterations =', k)
+        #print('Kuiper k iterations =', k)
         return y
     
     # ---------------------------------------------------------------------- #
@@ -383,6 +434,8 @@ class GOFTests():
         ----------
             Vn: the Kuiper's test statistic
             pVn: the p-value for the statistic
+            Vns: the modified Kuiper's test statistic
+            pVns: the p-value for the modified statistic
             Vc: the critical value at ALPHAL (n=100 if n>100)
             alp_lev: the alpha level of significance
             where:
@@ -391,9 +444,20 @@ class GOFTests():
         Returns:
         --------
             Kuiper_gof_results: dataFrame collecting the above.
+        References: 
+        ----------
+            1. Equation (6.3.25) of:
+                Mardia K. V., Jupp P. E., (2000)
+                "Directional Statistics", Wiley.
+                ISBN: 0-471-95333-4 
+            2. Equation (7.2.2) of:
+                Jammalamadaka S. Rao, SenGupta A. (2001), 
+                "Topics in Circular Statistics", World Scientific.
+                ISBN: 981-02-3778-2 
         """
         cY_ = self.CDFX()
         n = len(cY_)
+        sqn = np.sqrt(n)
         
         # prepare the Kuiper test: 
         ii = np.arange(0, 1, 1/n)
@@ -405,18 +469,27 @@ class GOFTests():
         Dm = max(vec2)
         
         # compute the Kuiper statistic Vn: 
-        Vn = (np.sqrt(n))*(Dp + Dm)
+        Vn = sqn*(Dp + Dm)
         # compute the Kuiper p-value: 
         pVn = self.Kuiper_CDF( Vn, n )
         
+        # modified Kuiper statistic Vns: 
+        # eq. (6.3.30) without the sqrt(n): 
+        # for n>=8, both Vn and Vns are very close. 
+        Vns = Vn * (1 + 0.155/sqn + 0.24/n)
+        pVns = self.Kuiper_CDF( Vns, n )
+        
         # Significance levels: 
-        alpha = np.array([0.10, 0.05, 0.025, 0.01])
-        Vc = np.array([1.620, 1.747, 1.862, 2.001])
-        if Vn < min(Vc):
+        alpha = np.array([ 0.10, 0.05, 0.025, 0.01 ])
+        # The Vc provided below are the upper quantiles of Vns,
+        # Table 6.3 of Ref. [1].
+        Vc = np.array([ 1.620, 1.747, 1.862, 2.001 ])
+        
+        if Vns < min(Vc):
             H0_K = "Do not reject"
             dif_v = abs(Vn - Vc)
             ind_v = np.argmin(dif_v)
-            print('ind_v:',ind_v)
+            #print('ind_v:',ind_v)
             alp_lev = alpha[ind_v]
             Vcc = Vc[ind_v]
         else:
@@ -427,20 +500,22 @@ class GOFTests():
         Kuiper_gof_results = pd.DataFrame({'GOFTest': "Kuiper", \
                                            'Statistic': Vn, \
                                            'Symbol': "Vn", \
+                                           'ModStatistic': Vns, \
                                            'CriticalValue': Vcc, \
                                            'PValue': pVn, \
+                                           'ModifiedPValue': pVns, \
                                            'SignifLevel': alp_lev, \
                                            'Decision': [H0_K]})
         
         Kuiper_gof_results = Kuiper_gof_results[['GOFTest', 'Statistic', \
-                                                 'Symbol', \
+                                                 'Symbol', 'ModStatistic', \
                                                  'CriticalValue','PValue', \
+                                                 'ModifiedPValue', \
                                                  'SignifLevel', \
                                                  'Decision']]
         
-        return Kuiper_gof_results
         #return Vn, Vcc, pVn, H0_K, alp_lev
-    
+        return Kuiper_gof_results    
     
     # ---------------------------------------------------------------------- #
     # instance method: 
@@ -540,7 +615,7 @@ class GOFTests():
         R2 = self.myR2( cdfX_r2, cdf_obs )
         
         # this is subjective: what should a good R2 be???
-        print('R2 =', R2)
+        # print('R2 =', R2)
         R2c = 0.90
         if R2 > R2c:
             H0_R2 = "Do not reject"
@@ -585,3 +660,20 @@ class GOFTests():
         
         return fig
 
+    # ---------------------------------------------------------------------- #
+    # instance method: 
+    def dispersion_coeff( self ):
+        """
+        Return the dispersion coefficient of one family of dispersed fibers,
+        as defined by Holpzapfel.
+        kappa_ip = ( 1 - I1(b) / I0(b) )/2 
+        """
+        # Collect the dispersion coefficients for every fiber family: 
+        dispersion = []
+        p_, kappa_, m_, pu_ = self.results
+        for vmi in range( self.N_VonMises ): # p, k, m 
+            kap_ = kappa_[vmi]
+            dispersion.append( 0.5*(1 - (sp.special.i1(kap_))/(sp.special.i0(kap_)) ) )
+        
+        return dispersion
+    

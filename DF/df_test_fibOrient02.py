@@ -279,11 +279,11 @@ print(dataFrameGOF)
 
 
 
-fit_object = MAOA.Fitting( np.radians(ResultsFFT.X), np.radians(ResultsFFT.Y) )
+fit_object = MAOA.Fitting( np.radians(ResultsFFT.X), ResultsFFT.Y )
 
 fit_results = fit_object.FitVMU( N_VonMises=1, Uniform=True )
 
-print('print 1: ', fit_object.results)
+print('print 1: ', fit_object.parameters)
 print('print 2: ', fit_object.N_VonMises)
 print('print 3: ', fit_object.Uniform)
 
@@ -294,14 +294,23 @@ print('print 3: ', fit_object.Uniform)
 #gofTests = DFGOF.GOFTests( angles, values )
 gofTests = DFGOF.GOFTests( fit_object )
 
-# compute the R2 coefficient: 
-R2_GOF = gofTests.R2_GOF()
-
 # generate the gof_results: 
 ResultsGOF = gofTests.collect_gof_results()
 
-# show the gof_results: 
+# show all the gof_results: 
 gofTests.gof_results
+
+# show the Kuiper results:
+gofTests.Kuiper_GOF()
+
+# show the Watson results:
+gofTests.Watson_GOF()
+
+# show the R2 coefficient: 
+gofTests.R2_GOF()
+
+# the dispersion coefficients (Holzapfel):
+dispersion_coeff = gofTests.dispersion_coeff()
 
 fit_object.PlotVMU()
 
