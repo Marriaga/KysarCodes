@@ -95,8 +95,18 @@ def GetImageMatrix(Name,Silent=False,GetTiffRes=False, **kwargs):
             Img=Img.convert("L")
             if not Silent: print("Converted to 'L' Mode")
 
-    if GetTiffRes and (Ext == 'tif' or Ext == 'iff'): xres,yres = Img.info['resolution']
+    if GetTiffRes and (Ext == 'tif' or Ext == 'iff'):
+        try:
+            xres,yres = Img.info['resolution']
+        except:
+            try:
+                xres,yres = Img.info['dpi']
+            except:
+                print("No Resolution Info")
+                xres=1.0
+                yres=1.0
     
+
     # sizes=Img.size
     # if not sizes[0]==sizes[1]: raise ValueError("Image must be a square")
     Mpix = np.copy(np.asarray(Img))
