@@ -138,7 +138,7 @@ def GetImageMatrix(Name,Silent=False,GetTiffRes=False, **kwargs):
                 print("No Resolution Info")
                 xres=1.0
                 yres=1.0
-    
+
 
     # sizes=Img.size
     # if not sizes[0]==sizes[1]: raise ValueError("Image must be a square")
@@ -190,7 +190,7 @@ def OpenPILRaw(FName,dims=None,PrecBits=None,ConvertL=False):
 def SmoothImage(Matrix,N=1):
     '''Smooths a Matrix with kernel [0 1 0; 1 4 1; 0 1 0]/8'''
     A=Matrix.copy()
-    for i in range(N):
+    for _ in range(N):
         s=A.shape[0]-1
         B=A*4.0
         B[-s:,:]+=A[:s,:]
@@ -292,11 +292,10 @@ def Rescale8bit(Matrix):
 
 class CoordsObj(object):
     def __init__(self,Coords=None,Img=None,XYScaling=None,ZScaling=None,InactiveThreshold=None,Smooth=None):
-        self.Mat = None
+        self.Mat = None # Matrix of image in Coord format
         self.XYScaling = None
         self.MN = None
         self.Coords = None
-        self.pavg = None
         
         if Coords is not None:
             self.setFromCoords(Coords)
@@ -306,9 +305,9 @@ class CoordsObj(object):
     # INITIALIZATION
 
     def setFromImg(self,Img,XYScaling=None,ZScaling=None,InactiveThreshold=None,Smooth=None):
-        ''' Create Coordinates object from Path or Numpy'''
+        ''' Create Coordinates object from Path or Numpy Matrix in Image format'''
         if type(Img) == np.ndarray:
-            self.setFromMat(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold,Smooth=Smooth)
+            self.setFromMat(Image2np(Img),XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold,Smooth=Smooth)
         elif type(Img) == type("string"):
             self.setFromPath(Img,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold,Smooth=Smooth)
 
@@ -316,17 +315,16 @@ class CoordsObj(object):
         ''' Create Coordinates object from Image Path'''
         Mat , ImgXYScaling = GetImageMatrix(Img,GetTiffRes=True)
         if XYScaling is None: XYScaling=ImgXYScaling
-        self.setFromMat(Mat,XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold,Smooth=Smooth)
+        self.setFromMat(Image2np(Mat),XYScaling=XYScaling,ZScaling=ZScaling,InactiveThreshold=InactiveThreshold,Smooth=Smooth)
 
     def setFromMat(self,Mat,XYScaling=None,ZScaling=None,InactiveThreshold=None,Smooth=None):
-        ''' Create Coordinates object from Matrix (image)'''
+        ''' Create Coordinates object from Numpy Matrix in Coord format'''
         self.Mat = Mat
         if ZScaling is not None: self.Mat*=ZScaling
         self.XYScaling=XYScaling
         if self.XYScaling is None: self.XYScaling = (1.0,1.0)
         self.MN=Mat.shape
         self.Coords=self.MatToCoords(InactiveThreshold=InactiveThreshold,Smooth=Smooth)
-        self.pavg = np.average(self.Coords,axis=0)
 
     def resetFromCoords(self,Coords):
         ''' Same as setFromCoords but also resets MN and XYScaling'''
@@ -334,13 +332,11 @@ class CoordsObj(object):
         self.XYScaling = None
         self.MN = None
         self.Coords = Coords
-        self.pavg = np.average(self.Coords,axis=0)
 
     def setFromCoords(self,Coords):
         ''' Create Coordinates object from Coordinates. Note that MN and XYScaling remain the same as before'''
         self.Mat = None
         self.Coords = Coords
-        self.pavg = np.average(self.Coords,axis=0)
 
     def fixXYScaling(self,XYScaling=None):
         if XYScaling is not None: self.XYScaling = XYScaling # Overide with new XYScale
@@ -367,6 +363,10 @@ class CoordsObj(object):
         self.fixMN(MN)
         self.Mat = self.CoordsToMat()
 
+    def saveAsImage(self,ImageName):
+        SaveTif(np2Image(self.getMat().copy()),ImageName,self.XYScaling)
+
+
     # GET DATA
 
     def getCoords(self):
@@ -374,8 +374,7 @@ class CoordsObj(object):
         return self.Coords
 
     def getTransformedCoords(self,R,T,pavg=None):
-        if pavg is None: pavg = self.pavg
-        return self.ApplyRotationAndTranslation(self.Coords,R,T,pavg=pavg)
+        return self.ApplyRotationAndTranslation(self.Coords.copy(),R,T,pavg=pavg)
 
     def getMat(self,MN=None,XYScaling=None,GetResolution=False):
         ''' Gets Matrix'''
@@ -384,19 +383,19 @@ class CoordsObj(object):
         if GetResolution: return self.Mat,self.XYScaling
         return self.Mat
 
-    def getTransformedMat(self,R,T,MN=None,XYScaling=None,GetResolution=False):
+    def getTransformedMat(self,R,T,pavg=None,MN=None,XYScaling=None,GetResolution=False):
         if (self.Mat is None) or (MN != self.MN) or (XYScaling != self.XYScaling):
             self.fixXYScaling(XYScaling)
             self.fixMN(MN)
-            Mat=self.CoordsToMat(R=R,T=T)
+            Mat=self.CoordsToMat(R=R,T=T,pavg=pavg)
             if GetResolution: return Mat,self.XYScaling
             return Mat
 
-    def getIJ(self,R=None,T=None):
+    def getIJ(self,R=None,T=None,pavg=None):
         if R is None: R=np.array([0,0,0])
         if T is None: T=np.array([0,0,0])
 
-        NewCoords = self.getTransformedCoords(R,T)
+        NewCoords = self.getTransformedCoords(R,T,pavg=pavg)
 
         M,N=self.MN
         #sx,sy = float(self.XYScaling[0]),float(self.XYScaling[1])
@@ -412,9 +411,9 @@ class CoordsObj(object):
         X/=sx
         Y/=sy
 
-        # Center the image
-        X+=M/2
-        Y+=N/2
+        # (OLD) Center the image
+        # X+=M/2
+        # Y+=N/2
 
         #Fix out of bounds
         IX=np.logical_and(X>=0,X<=M-1)
@@ -451,20 +450,29 @@ class CoordsObj(object):
         elif len(rV)==4:
             return Quaternion(rV).rotation_matrix
 
-
-    
     @classmethod
-    def ApplyRotationAndTranslation_old(cls,Coords,rV,tV):
-        ''' Returns the Coords after being transformed '''
-        rVn=rV
-        if len(rV)==6:
-            rVn=np.concatenate((tV,rV))
-        RM = cls.getRotationMatrix(rVn)
-        return np.dot(Coords,np.transpose(RM))+tV
+    def rotationMatrixToEulerAngles(cls,RM):
+        sy = math.sqrt(RM[0,0] * RM[0,0] +  RM[1,0] * RM[1,0])
+        singular = sy < 1e-6
     
+        if  not singular :
+            x = math.atan2(RM[2,1] , RM[2,2])
+            y = math.atan2(-RM[2,0], sy)
+            z = math.atan2(RM[1,0], RM[0,0])
+        else :
+            x = math.atan2(-RM[1,2], RM[1,1])
+            y = math.atan2(-RM[2,0], sy)
+            z = 0
+    
+        return np.array([x, y, z])
+
     @classmethod
     def ApplyRotationAndTranslation(cls,Coords,rV,tV,pavg=None):
-        ''' Returns the Coords after being transformed. Rotations are relative to center of gravity of Coordinates'''
+        ''' Returns the Coords after being transformed. Rotations are relative to pavg position (default [0,0,0])'''
+
+        # Return if no transformation
+        if np.linalg.norm(rV)==0.0 and np.linalg.norm(tV)==0.0:
+            return Coords
 
         # Robust input of pavg
         if type(pavg) is np.ndarray:
@@ -474,7 +482,7 @@ class CoordsObj(object):
         elif type(pavg) is list:
             pavg=np.array(pavg)
         elif (pavg is None) or (pavg == 0):
-            print("Roation Center Assumed at Origin. Set pavg=0 to supress this message")
+            if pavg is None: print("Roation Center Assumed at Origin. Set pavg=0 to supress this message")
             pavg=np.zeros(3)
         else:
             raise ValueError("Can't Understand the value given for pavg:"+str(pavg))
@@ -490,23 +498,20 @@ class CoordsObj(object):
         return RCg+(pavg+tV)
 
     # CONVERSION
-
     def MatToCoords(self,InactiveThreshold=None,Smooth=None):
         '''Convert image matrix to active coordinates
 
         Optional: InactiveThreshold (float) - Values less or equal to this threshold are considered inactive
         Output: Array of [x,y,z] 
         '''
-        #sx,sy=self.XYScaling
         sx,sy = 1/float(self.XYScaling[0]),1/float(self.XYScaling[1])
-        # Get Shape of Array (image)
-        M,N=self.MN
-        # Use coordinates wrt center
-        dx,dy=M/2,N/2
         # Compute values of x and y
-        B1, B0 = np.meshgrid(range(N), range(M))
-        B0=(B0-dx)*sx
-        B1=(B1-dy)*sy
+        Nr,Nc= self.MN
+        x = np.linspace(0, (Nc-1), Nc, dtype=np.float32)
+        y = np.linspace(0, (Nr-1) , Nr, dtype=np.float32)
+        B0, B1 = np.meshgrid(x, y, sparse=False, indexing='ij')
+        B0*=sx
+        B1*=sy
         # Make coordinates
         newmat=self.Mat.copy()
         if Smooth is not None:
@@ -519,11 +524,11 @@ class CoordsObj(object):
         else:
             return Coords[self.Mat>InactiveThreshold]
 
-    def CoordsToMat(self,R=None,T=None):
+    def CoordsToMat(self,R=None,T=None,pavg=None):
         '''Convert points in "Coordinate" form to matrix form.
         '''
         Mat=np.zeros(self.MN)
-        IJ,Z=self.getIJ(R=R,T=T)
+        IJ,Z=self.getIJ(R=R,T=T,pavg=pavg)
         IJ=np.round(IJ).astype(np.int32)
 
         Mat[IJ[:,0],IJ[:,1]]=Z[:]
@@ -556,7 +561,7 @@ class ImageFit(object):
                   ZScaling (scalar) - Scalar with the scaling for the pixel value corresponding to the Z direction
                   InactiveThreshold (scalar) - Scalar with the Z value below which the pixel will be ignored
         '''
-        self.CImage = CoordsObj(Img=Image, **kwargs)
+        self.CImage = CoordsObj(Img=Image, InactiveThreshold=self.RefInactiveThreshold, **kwargs)
         self.CImage.fitDim(self.CReference)
         return self.Solve(silent=silent)
 
@@ -577,8 +582,12 @@ class ImageFit(object):
         # Get initialization parameters
         self.RT0a = self.getRTarr(self.GetInitialization())
         # R,T = self.GradientDescent(self.RT0a)
+        # R,T = self.getRTtup(self.RT0a)
         R,T = self.ScipyOptimize(self.RT0a,silent=silent)
-        return R,T
+
+        RM = CoordsObj.getRotationMatrix(R)
+        TZero = T + self.O_New - np.dot(self.O_New,np.transpose(RM))
+        return R,TZero
 
 
     def GetInitialization(self):
@@ -595,7 +604,8 @@ class ImageFit(object):
         O_Ref=np.average(CRef,axis=0)
         self.O_Ref = O_Ref
         O_New=np.average(CNew,axis=0)
-    
+        self.O_New = O_New
+
         # Estimate Highest point of Membranes
         M_Ref=CRef[np.argmax(CRef[:,2])]
         M_New=CNew[np.argmax(CNew[:,2])]
@@ -610,7 +620,6 @@ class ImageFit(object):
         # Quaternions
         # r0=Quaternion(axis=[0,0,1],radians=-rotangle).elements
         # t0=O_Ref-CoordsObj.ApplyRotationAndTranslation(O_New,r0,[0,0,0])
-
         return r0,t0
 
     # METHODS
@@ -630,18 +639,20 @@ class ImageFit(object):
         elif len(X)==7:
             return X[0:4],X[4:7]
         
-
-
     @staticmethod
     def getRTarr(tup):
         return np.concatenate(tup)
 
-    def CostFunction(self,RT):
+    def CostFunction(self,RT,printdetails=False):
         R,T=self.getRTtup(RT)
-        IJNew,ZNew = self.CImage.getIJ(R,T)
+        IJNew,ZNew = self.CImage.getIJ(R,T,pavg=self.O_New)
 
         IJi=np.floor(IJNew).astype(np.int32)
         IJf=np.ceil(IJNew).astype(np.int32)
+
+        posisInt = IJf==IJi
+        IJf[posisInt]+=1
+
         alf=(IJNew-IJi)/(IJf-IJi)
         Zii=self.CReference.Mat[IJi[:,0],IJi[:,1]]
         Zif=self.CReference.Mat[IJi[:,0],IJf[:,1]]
@@ -662,23 +673,31 @@ class ImageFit(object):
         N=len(DZ)
         self.AverageDZ = np.sum(np.abs(DZ))/N
         DZ=DZ**2
-        C1=np.sum(DZ)/N # Average SSQ distance between doubly-active points of membranes (best fit)
+        # C1=np.sum(DZ)/N # Average SSQ distance between doubly-active points of membranes (best fit)
+        C1=self.AverageDZ # Average distance between doubly-active points of membranes (best fit)
         
+        PI=1-N/len(ZNew) #percentage of nodes not contributing to fit cost
+        if printdetails: print("len(ZNew)=",str(len(ZNew)),", len(II)="+str(N),"P1="+str(PI))
+        Iai=Ifi*alf[:,0]-Iii*(alf[:,0]-1)
+        Iaf=Iff*alf[:,0]-Iif*(alf[:,0]-1)
+        Iab=Iaf*alf[:,1]-Iai*(alf[:,1]-1)
+        III=np.logical_or(np.logical_or(Iii,Iif),np.logical_or(Ifi,Iff))
+        PI=1-np.sum(Iab[III])/len(ZNew)
+        C2=max(0,np.exp(10*(PI-0.1))-1)
 
-        Ntot=len(self.CImage.Coords[:,0])
-        PI=1-N/Ntot #percentage of nodes not contributing to fit cost
-        C2=10*np.exp(PI/0.1-1)
-        return C1+C2
+        if printdetails:
+            print("{0:12.6f}".format(PI),"{0:12.6f}".format(C1),"{0:12.6f}".format(C2),np.round(R,4),np.round(T,4))
+        return C1 #+C2
 
     def ComputeGradientCost(self,RT,Incs=None):
         R,T=self.getRTtup(RT)
         if Incs is None:
-            DR,DT=1E-7,1E-7
+            DR,DT=1e-9,1e-9
         else:
             DR,DT=Incs[0],Incs[1]
         LR,LT = len(R),len(T)
 
-        Cost0 = self.CostFunction(RT)
+        Cost0 = self.CostFunction(RT,printdetails=False)
     
         GradientR = np.zeros(LR)
         GradientT = np.zeros(LT)
@@ -688,7 +707,7 @@ class ImageFit(object):
             deltaR = np.zeros(LR)
             deltaR[i] = DR
             NRT=self.getRTarr((R+deltaR,T))
-            CostNew = self.CostFunction(NRT)
+            CostNew = self.CostFunction(NRT,printdetails=False)
             GradientR[i] = (CostNew-Cost0)/DR
 
         #Translations Gradient
@@ -696,17 +715,19 @@ class ImageFit(object):
             deltaT = np.zeros(LT)
             deltaT[i] = DT
             NRT=self.getRTarr((R,T+deltaT))
-            CostNew = self.CostFunction(NRT)
+            CostNew = self.CostFunction(NRT,printdetails=False)
             GradientT[i] = (CostNew-Cost0)/DT
 
         return self.getRTarr((GradientR,GradientT))
     
-
     def ScipyOptimize(self,RTin,silent=False):
         options=None
         if not silent: options={"disp":True}
+        # options={"maxiter":0}
         OptResult = spoptimize.minimize(self.CostFunction,RTin,jac=self.ComputeGradientCost,options=options)
         # OptResult = spoptimize.minimize(self.CostFunction,RTin,jac=self.ComputeGradientCost,method='BFGS',options=options)
+        # OptResult = spoptimize.minimize(self.CostFunction,RTin,method='L-BFGS-B',options=options)
+
         # OptResult = spoptimize.basinhopping(self.CostFunction,RTin,minimizer_kwargs={"jac":self.ComputeGradientCost})
         if not silent: print(OptResult.message)
         R,T=self.getRTtup(OptResult.x)
