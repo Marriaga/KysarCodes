@@ -48,38 +48,46 @@ class T(unittest.TestCase):
         self.assertTrue(np.all([[255,  24,   0], [210,  73,   0], [195, 189,   0]]==mypix))
         
     def test_ImageFit(self):
-        # Basic Image
-        RImg=MAIP.MakeRImage((50,50))
-        CO_R = MAIP.CoordsObj(Img=RImg,ZScaling=50,InactiveThreshold=0)
+        # MATL.MakeNewDir("Test")
+        # ReferenceImage = "Test\\ReferenceR.tif"
+        # FittingImage = "Test\\RotatedR.tif"
 
-        # Reference Image (with slight tilt for initialization)
-        AdjustedCoords = CO_R.getTransformedCoords([0,np.radians(2),0],[0,0,7])
-        # Rotated and Translated Coordinates
-        NewCoords = CO_R.getTransformedCoords([0,np.radians(3),np.radians(90)],[3.2,1.1,2.0])
+        # print("Base R Image...")
+        Nsize=30
+        RImg=MAIP.MakeRImage((Nsize,Nsize)) # Make R shaped image matrix in Image Format
+        CO_R = MAIP.CoordsObj(Img=RImg,ZScaling=50,InactiveThreshold=0.0)
 
-        # Adjust the original Coordinates to include small tilt
-        CO_R.setFromCoords(AdjustedCoords)
-        RMat = CO_R.getMat()
+        # print("Make adjusted Base Coordinates...")
+        BaseTranslation = np.array([0,0,7])
+        BaseRotation = np.array([np.radians(2),0,0])
+        BaseCoords = CO_R.getTransformedCoords(BaseRotation,BaseTranslation,pavg=0)
+        CO_Rbase = MAIP.CoordsObj(Img=RImg,ZScaling=50,InactiveThreshold=0.0)
+        CO_Rbase.setFromCoords(BaseCoords)
+        #CO_Rbase.saveAsImage(ReferenceImage)
+        RMat = CO_Rbase.getMat()
 
-        # Create fitting object with reference image
-        FitObj = MAIP.ImageFit(RMat,InactiveThreshold=0)
-        # Try to fit NewCoords to Reference Image
-        R,Tr = FitObj.FitNewCoords(NewCoords,silent=True)
+        # print("Make New Fitting Coordinates...")
+        NewTranslation = np.array([Nsize+0.4,13.7,30.0])
+        NewRotation = np.array([np.radians(1),np.radians(10),np.radians(90)])
+        NewCoords = CO_R.getTransformedCoords(NewRotation+BaseRotation,NewTranslation+BaseTranslation,pavg=0)
+        CO_RNew = MAIP.CoordsObj(Img=RImg,ZScaling=50,InactiveThreshold=0.0)
+        CO_RNew.setFromCoords(NewCoords)
+        # CO_RNew.saveAsImage(FittingImage)
 
-        # Check if correction angle is ~= -90 degrees
-        self.assertAlmostEqual(np.degrees(R[2]),-90.0,1)
+        # print("MAKE FIT...")
+        FitObj = MAIP.ImageFit(MAIP.np2Image(RMat),InactiveThreshold=0)
+        # FitObj = MAIP.ImageFit(ReferenceImage,InactiveThreshold=0)
+        R,T = FitObj.FitNewCoords(NewCoords,silent=True)
+        # R,T = FitObj.FitNewImage(FittingImage,silent=True)
 
-        # Check if cost function is below 2.5
-        self.assertTrue(FitObj.CostFunction(np.concatenate((R,Tr)))<27)
+        Rd=np.degrees(R)
+        RMR = MAIP.CoordsObj.getRotationMatrix(NewRotation)
+        Tf = -RMR.T@NewTranslation
+        Rfd= np.degrees(MAIP.CoordsObj.rotationMatrixToEulerAngles(RMR.T))
 
-        # Check if the SumSquares of the diference between certain points is almost zero
-        mylist=np.array([[8,18],[23,18],[15,33]]).astype(np.int32)
-        NewMat=FitObj.CImage.getTransformedMat(R,Tr)
-        ResObtained=NewMat[mylist[:,0],mylist[:,1]]
-        ResExpected=CO_R.getMat()[mylist[:,0],mylist[:,1]]
-        SumSquares=np.sum((ResObtained-ResExpected)**2)
-        self.assertAlmostEqual(SumSquares,0.0,1)
-        
+        for i in range(3): self.assertAlmostEqual(Rd[i]/90.0,Rfd[i]/90.0,2)
+        for i in range(3): self.assertAlmostEqual(T[i]/30.0 ,Tf[i]/30.0 ,1)
+       
         
     @classmethod
     def tearDownClass(cls):
