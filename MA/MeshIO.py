@@ -497,7 +497,10 @@ class PLYIO(BaseIO):
     def WriteNodesBinary(self,fp):
         NoNLabs = self.PropTypes.Ltype[1:]
         tmpdtype = self.Nodes.Mat.dtype.descr[1:]
-        TmpNodes = self.Nodes.Mat[NoNLabs].copy().data.astype(tmpdtype)
+        try:
+            TmpNodes = self.Nodes.Mat[NoNLabs].copy().data.astype(tmpdtype)
+        except:
+            TmpNodes = self.Nodes.Mat[NoNLabs].copy().astype(tmpdtype)
         TmpNodes.tofile(fp)
         
     def WriteElemsBinary(self,fp):
@@ -982,7 +985,7 @@ class MyMesh(object):
             ShapeOperator=self.NSdihe
         
         for n in range(self.NNodes):
-            Vmax,Vmin,Vnor,kmax,kmin,Nktype,alph,VMM1,VMM2 = MyMesh.IndividualCurvPrincipalDirections(ShapeOperator[n],self.NHv[n])
+            Vmax,Vmin,Vnor,kmax,kmin,Nktype,alph,VMM1,_VMM2 = MyMesh.IndividualCurvPrincipalDirections(ShapeOperator[n],self.NHv[n]) 
             # if n==268:
             #     ShapeOperator[n][0,1]=999
             self.NMaxCd[n] = Vmax
