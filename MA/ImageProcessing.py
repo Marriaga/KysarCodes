@@ -30,13 +30,24 @@ def FlipImage(NameIn,NameOut):
     else: 
         FlippedImage.save(NameOut)
 
+
+
+### Note on image matrix formats ###
+# Consider an image given by:
+#   00 10 20
+#   15 25 35
+#   30 40 50 
+# There are two formates for storing this image in a matrix.
+#  1) Image format - Typical image formats usually store a matrix such that positions (0,0), (1,0), (1,2) would be 00, 15, 35.
+#  2) Coord format - This format will behave as if indexes are coordinates, such that positions (0,0), (1,0), (1,2) would be 30, 40, 10.
+
 # === Conversion between formats of Matrices
 def Image2np(Mpix):
-    '''Convert image/matrix index style from Image to numpy.'''
+    '''Convert matrix format from Image to Coord.'''
     return np.transpose(np.flipud(Mpix))
 
 def np2Image(Mpix):
-    '''Convert image/matrix index style from numpy to Image.'''
+    '''Convert matrix format from Coord to Image.'''
     return np.flipud(np.transpose(Mpix))
     
 # === Show Images    
