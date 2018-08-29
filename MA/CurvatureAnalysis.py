@@ -15,8 +15,15 @@ import MA.Tools as MATL
 import MA.CSV3D as MA3D
 import MA.MeshIO as MAMIO
 import MA.OrientationAnalysis as MAOA
+import MA.ImageProcessing as MAIP
 
 sys.path.append('C:\\Program Files\\VCG\\MeshLab') # MeshLab
+
+def flipIfNeeded(inputimage,Force=False):
+    root,ext=os.path.splitext(inputimage)
+    flippedimage=root+"_Flipped"+ext
+    if Force or MATL.IsNew(inputimage,flippedimage): MAIP.FlipImage(inputimage,flippedimage)
+    return flippedimage
 
 def checkNewFiberImages(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsList):
     for f in [DirectionalityBase + "_20X_" + position + "_Fibers.png" for position in PointsList[:,0]]:
@@ -131,9 +138,27 @@ def CollectArray(Data,root,shape=None,UseLetters=True):
     if shape is not None: newshape.extend(shape)
     return Data[Index].values.reshape(newshape)
 
+def GetExtraInfo(root):
+    Name = os.path.splitext(os.path.basename(root))[0]
+    isRight=False
+    isKasza=False
+
+    if Name[8]=="R": isRight = True
+    if Name[-1]=="K": isKasza = True
+    
+    return isRight,isKasza
+
 
 ### MAIN FUNCTIONS ###
-
+SUF_csvFile_PointsIntData = "_Points_Interpolated_Data.csv"
+SUF_csvFile_PointsDirectionalityResults = "_Points_DirectionalityResults.csv"
+SUF_csvFile_PointsCurvatureResults = "_Points_CurvatureResults.csv"
+SUF_csvFile_PointsCombinedResults = "_Points_CombinedResults.csv"
+SUF_tiffile = "_AverageHeight_512_Smooth.tif"
+SUF_plyFile_Orig = "_PLY0_Original.ply"
+SUF_plyFile_Smooth = "_PLY1_Smooth.ply"
+SUF_plyFile_Curvs = "_PLY2_Curvatures.ply"
+SUF_plyFile_RT = "_PLY3_Rotated.ply"
 
 def MakePLYWithCurvatureInfo(plyFile_Smooth,plyFile_Curvs,SmoothN):
     Ply = MAMIO.PLYIO()
@@ -186,21 +211,23 @@ def InterpolatePropertiesFromPLY(plyFile_Curvs,csvFile_PointsData,PointsList):
     Data.to_csv(csvFile_PointsData,index=False)
 
 def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsDF,BaseAngleFiles=None):
+    isRight,isKasza = GetExtraInfo(DirectionalityBase)
+    
     Npoints=len(PointsDF)
     RESULTS = pd.DataFrame(index=range(Npoints),
         columns=["Name","Position",
-            "1VM_Weig","1VM_Disp","1VM_Ang","1VM_Weigu",
-            "2VM_Weig1","2VM_Disp1","2VM_Ang1",
-            "2VM_Weig2","2VM_Disp2","2VM_Ang2","2VM_Weigu"])
+            "VM1_Weig","VM1_Conc","VM1_Ang","VM1_Weigu",
+            "VM2_Weig1","VM2_Conc1","VM2_Ang1",
+            "VM2_Weig2","VM2_Conc2","VM2_Ang2","VM2_Weigu"])
     BaseAuxDirFolder = os.path.join(DirectionalityBase+"_FiberAnalysis","")
     OAnalysis = MAOA.OrientationAnalysis(BaseAngFolder=BaseAngleFiles,OutputRoot=BaseAuxDirFolder,verbose=True)
     OAnalysis.SetWindowProperties(WType="Tukey",Alpha=0.2,PType="Separable")
 
     df1VM = pd.DataFrame(index=[0], columns=[
-            "VM Weight (%)","VM Dispersion (k)","VM Angle (deg)","Uniform Weight (%)"])
+            "VM Weight (%)","VM Concentration (k)","VM Angle (deg)","Uniform Weight (%)"])
     df2VM = pd.DataFrame(index=[0], columns=[
-            "VM1 Weight (%)","VM1 Dispersion (k)","VM1 Angle (deg)",
-            "VM2 Weight (%)","VM2 Dispersion (k)","VM2 Angle (deg)","Uniform Weight (%)"])
+            "VM1 Weight (%)","VM1 Concentration (k)","VM1 Angle (deg)",
+            "VM2 Weight (%)","VM2 Concentration (k)","VM2 Angle (deg)","Uniform Weight (%)"])
 
     for i in range(Npoints):
         row=PointsDF.iloc[i]
@@ -211,6 +238,8 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults
 
         imgfile = DirectionalityBase + "_20X_"+ position +"_Fibers.png"
         print("  - Directionality of: " + imgfile)
+        if isRight: imgfile = flipIfNeeded(imgfile)
+
         OAnalysis.SetImage(imgfile)
         BaseAuxImage= os.path.join(OAnalysis.OutputRoot+"_"+OAnalysis.GetWindowPropName())
 
@@ -230,7 +259,7 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults
         vmf = MAOA.Fitting(Angles_R,Intensities)
         p,k,m,u = vmf.FitVMU(1)
         m=np.degrees(m)
-        RESULTS.iloc[i][["1VM_Weig","1VM_Disp","1VM_Ang","1VM_Weigu"]]=[p[0],k[0],m[0],u]
+        RESULTS.iloc[i][["VM1_Weig","VM1_Conc","VM1_Ang","VM1_Weigu"]]=[p[0],k[0],m[0],u]
         vmf.PlotVMU(axes[1,0])
         axes[1,0].set_title("1 VonMises + Uniform")
 
@@ -243,9 +272,9 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults
 
         p,k,m,u = vmf.FitVMU(2)
         m=np.degrees(m)
-        RESULTS.iloc[i][["2VM_Weig1","2VM_Disp1","2VM_Ang1"]]=[p[0],k[0],m[0]]
-        RESULTS.iloc[i][["2VM_Weig2","2VM_Disp2","2VM_Ang2"]]=[p[1],k[1],m[1]]
-        RESULTS.iloc[i]["2VM_Weigu"]=u
+        RESULTS.iloc[i][["VM2_Weig1","VM2_Conc1","VM2_Ang1"]]=[p[0],k[0],m[0]]
+        RESULTS.iloc[i][["VM2_Weig2","VM2_Conc2","VM2_Ang2"]]=[p[1],k[1],m[1]]
+        RESULTS.iloc[i]["VM2_Weigu"]=u
         vmf.PlotVMU(axes[1,1])
         axes[1,1].set_title("2 VonMises + Uniform")
 
@@ -269,7 +298,7 @@ def ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsCurvatureR
     V_H = CollectArray(Data,'H',[3])
 
     NPoints = len(S_Position)
-    header = ["Position","X","Y","KMax","KMin","alpha","Angle_KMax","Angle_KMin","Angle_KMinMag1","Angle_KMinMag2","Type"]
+    header = ["Position","X","Y","KMax","KMin","alpha","Angle_KMax","Angle_KMin","Angle_KMinMag1","Angle_KMinMag2","Curv_Type"]
     outdf = pd.DataFrame(index=np.arange(0, NPoints), columns=header)
     for n in range(NPoints):
         Vmax,Vmin,Vnor,kmax,kmin,Type,alph,VMM1, VMM2= MAMIO.MyMesh.IndividualCurvPrincipalDirections(T_Shape[n],V_H[n]) # pylint: disable=unused-variable
@@ -281,11 +310,46 @@ def ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsCurvatureR
         outdf.loc[n] = [S_Position[n],Coord[0],Coord[1],kmax,kmin,alph*180.0/np.pi,Angle_KMax,Angle_KMin,Angle_KMinMag1,Angle_KMinMag2,Type]
     outdf.to_csv(csvFile_PointsCurvatureResults,index=False)
 
-# def CombineDataInALLResultsDF():
+def CombineAndProcessData(csvFile_PointsCombinedResults,csvFile_PointsCurvatureResults,csvFile_PointsDirectionalityResults):
+    CurvData = pd.read_csv(csvFile_PointsCurvatureResults)
+    DircData = pd.read_csv(csvFile_PointsDirectionalityResults)
+    NewData = CurvData.merge(DircData,on="Position")
+    isRight,isKasza = GetExtraInfo(csvFile_PointsCombinedResults)
+
+    NewData["Side"]="RightEar" if isRight else "LeftEar"
+    NewData["Microscope"]="Kasza" if isKasza else "Uptown"
+
+    if isRight:
+        def fixleftright(pos):
+            if pos=="Left": return "Right"
+            if pos=="Right": return "Left"
+            return pos
+        NewData["Position"] = list(map(fixleftright,NewData["Position"]))
+
+    # Side=[]
+    # Micro=[]
+    # for row in NewData['Name']:
+    #     sdlt=row[8]
+    #     if sdlt=="L":
+    #         membside= "LeftEar"
+    #     else:
+    #         membside= "RightEar"
+    #     Side.append(membside)
+
+    #     lastlt=row[-1]
+    #     if lastlt=="K":
+    #         microscope= "Kasza"
+    #     else:
+    #         microscope= "Uptown"
+    #     Micro.append(microscope)
+    # NewData["Side"]=Side
+    # NewData["Microscope"]=Micro
+
+    NewData.to_csv(csvFile_PointsCombinedResults,index=False)
 
 ### MASTER FUNCTIONS ###
 
-def getBaseNameFromFolder(File,Base):
+def getBaseNameFromFolder(File,Base=None):
     if Base is None:
         #Assumes that the Folder where the file is in is the main root name
         Folder = os.path.dirname(File)
@@ -293,37 +357,69 @@ def getBaseNameFromFolder(File,Base):
         Base = os.path.join(Folder,root)
     return Base
     
-def MakePLYFromTif(tiffile,Base=None,ScriptFileName=None,Force=False):
-    Base = getBaseNameFromFolder(tiffile,Base)
-    plyFile = Base+"_PLY0_Original.ply"
-    plyFile_Smooth = Base+"_PLY1_Reduced.ply"
-    plyFile_Curvs = Base+"_PLY2_Curvatures.ply"
+def MakePLYsFromTif(Base,ScriptFileName=None,Force=False):
+    tiffile =  Base + SUF_tiffile
+    plyFile_Orig = Base + SUF_plyFile_Orig
+    plyFile_Smooth = Base + SUF_plyFile_Smooth
+    plyFile_Curvs = Base + SUF_plyFile_Curvs
+    isRight,_isKasza = GetExtraInfo(Base)
+
+    if isRight: tiffile = flipIfNeeded(tiffile,Force=Force)
 
     # Make ply from height map if heightmap is newer
-    if Force or MATL.IsNew(tiffile,plyFile): 
+    if Force or MATL.IsNew(tiffile,plyFile_Orig): 
         print("Making 3D Surface...")
-        MA3D.Make3DSurfaceFromHeightMapTiff(tiffile,OFile=plyFile,NoZeros=True)
+        MA3D.Make3DSurfaceFromHeightMapTiff(tiffile,OFile=plyFile_Orig,NoZeros=True)
 
     # Smooth ply file if input ply is new
-    if Force or MATL.IsNew(plyFile,plyFile_Smooth): 
+    if Force or MATL.IsNew(plyFile_Orig,plyFile_Smooth): 
         print("Smoothing and reducing Surface...")
-        SmoothPly(plyFile,plyFile_Smooth,ScriptFileName=None)
+        SmoothPly(plyFile_Orig,plyFile_Smooth,ScriptFileName=None)
+
 
     # Make ply with curvature information
     if Force or MATL.IsNew(plyFile_Smooth,plyFile_Curvs):
         print("Computing Curvatures of Surface...")
         MakePLYWithCurvatureInfo(plyFile_Smooth,plyFile_Curvs,5)
 
-    return plyFile_Curvs
+def ComputeFitParameters(Base,FitObject,Force=False):
+    tiffile =  Base + SUF_tiffile
+    plyFile_Smooth = Base + SUF_plyFile_Smooth
+    plyFile_RT = Base + SUF_plyFile_RT
+    isRight,isKasza = GetExtraInfo(Base)
 
-def ProcessPoints(plyFile_Curvs,PointsDF,Base=None,Force=False,BaseAngleFiles=None): #receive csvAllResults,ALLResultsDF
-    Base = getBaseNameFromFolder(plyFile_Curvs,Base)
-    csvFile_PointsIntData = Base+"_Points_Interpolated_Data.csv"
+    if isRight: tiffile = flipIfNeeded(tiffile,Force=Force)
+
+    # Make ply from height map if heightmap is newer
+    if Force or MATL.IsNew(tiffile,plyFile_RT): 
+        print("Fit To Surface...")
+
+        R,T = FitObject.FitNewImage(tiffile)
+        print(R,T)
+
+        Ply = MAMIO.PLYIO()
+        Ply.LoadFile(plyFile_Smooth)
+        Nodes,Elems = Ply.ExportMesh()
+        Nodes.RotateAndTranslate(R,T)
+        Ply.ImportMesh(Nodes,Elems)
+        Ply.SaveFile(plyFile_RT)  
+
+def ProcessPoints(Base,PointsDF,Force=False,BaseAngleFiles=None):
+    plyFile_Curvs = Base + SUF_plyFile_Curvs
+    csvFile_PointsIntData = Base + SUF_csvFile_PointsIntData
     DirectionalityBase = Base
-    csvFile_PointsDirectionalityResults = Base+"_Points_DirectionalityResults.csv"
-    csvFile_PointsCurvatureResults = Base+"_Points_CurvatureResults.csv"
+    csvFile_PointsDirectionalityResults = Base + SUF_csvFile_PointsDirectionalityResults
+    csvFile_PointsCurvatureResults = Base + SUF_csvFile_PointsCurvatureResults
+    csvFile_PointsCombinedResults = Base + SUF_csvFile_PointsCombinedResults
+    isRight,isKasza = GetExtraInfo(Base)
 
     PointsList = PointsDF[['Position','X','Y']].values
+
+    if isRight:
+        SideSize = 1.38378*1024 if isKasza else 1.24296*1024
+        PointsList[:,1]*=(-1)
+        PointsList[:,1]+=SideSize
+
 
     # Go to each point in mesh and extract interpolated results from ply mesh
     if Force or MATL.IsNew(plyFile_Curvs,csvFile_PointsIntData):
@@ -340,31 +436,36 @@ def ProcessPoints(plyFile_Curvs,PointsDF,Base=None,Force=False,BaseAngleFiles=No
         print("Process Interpolated Points Data...")
         ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsCurvatureResults)
 
-    # if Force or MATL.IsNew(csvAllResults,csvFile_PointsCurvatureResults) or MATL.IsNew(csvAllResults,csvFile_PointsDirectionalityResults):
-        # # collect the data from both csvFile_PointsCurvatureResults and csvFile_PointsDirectionalityResults
-        # # put combined data in ALLResultsDF
+    if True or MATL.IsNew(csvFile_PointsDirectionalityResults,csvFile_PointsCombinedResults) or MATL.IsNew(csvFile_PointsCurvatureResults,csvFile_PointsCombinedResults):
+        print("Combine and Generate additional results")
+        CombineAndProcessData(csvFile_PointsCombinedResults,csvFile_PointsCurvatureResults,csvFile_PointsDirectionalityResults)
 
-
-def DO_EVERYTHING(FoldersNames,THEBASE,Force=False):
+def DO_EVERYTHING(FoldersNames,THEBASE,Force=False,tifrefIndex=0):
     '''
-    FoldersNames- Folers that contain the tif file with the heights and the fiber images.
-                  tif files should be named "Folder_AverageHeight_512_Smooth.tif" and fiber
-                  images should be named "Folder_20X_Position_Fibers.png"
-    THEBASE- The path where all the folder are. Also should contain the Points.csv file,
+    FoldersNames- List of each FOLDER that contains the tif file with the heights and the fiber images.
+                  Should follow the format YYYMMDDSm (Year,Month,Day,Side,microscope). tif files should
+                  be named "FOLDER_AverageHeight_512_Smooth.tif" and fiber images should be named
+                  "FOLDER_20X_Position_Fibers.png".
+    THEBASE- The path where all the folders are. Also should contain the Points.csv file,
              which has the fields "Name,Position,X,Y", where "Name" is the folder name,
              "Position" is the label for position in membrane and "X,Y" are the coordinates
              in 10X membrane coordinates of said points.
+    Force (default=False) - Recompute Everything
+    tifrefIndex (default=0) - index (in the FolderNames list) of the membrane to use as reference
     '''
     SmoothScriptFileName=os.path.join(THEBASE,"MashlabScript")
     MakeSmoothMeshlabScript(SmoothScriptFileName)
-    Points=loadPointDataLocations(os.path.join(THEBASE,"Points.csv"))
+    Points=loadPointDataLocations(os.path.join(THEBASE,"PointsNew.csv"))
     BaseAngleFiles = os.path.join(THEBASE,"BaseAngleFiles")
-    # csvAllResults = os.path.join(THEBASE,"AllResults.csv")
-    # ALLResultsDF = pd.DataFrame()
+    csvAllResults = os.path.join(THEBASE,"AllResults.csv")
 
-
+    FitObject = MAIP.ImageFit(os.path.join(THEBASE,FoldersNames[tifrefIndex],FoldersNames[tifrefIndex]+SUF_tiffile),InactiveThreshold=0.1)
 
     for FOLD in FoldersNames:
-        tiffile = os.path.join(THEBASE,FOLD,FOLD+"_AverageHeight_512_Smooth.tif")
-        plyFile_Curvs = MakePLYFromTif(tiffile,Force=Force,ScriptFileName=SmoothScriptFileName)
-        ProcessPoints(plyFile_Curvs,Points[FOLD],Force=Force,BaseAngleFiles=BaseAngleFiles) #pass csvAllResults,ALLResultsDF
+        Base = os.path.join(THEBASE,FOLD,FOLD)
+        MakePLYsFromTif(Base,Force=Force,ScriptFileName=SmoothScriptFileName)
+        ProcessPoints(Base,Points[FOLD],Force=Force,BaseAngleFiles=BaseAngleFiles)
+        ComputeFitParameters(Base,FitObject,Force=True)
+
+    # Combine and Process Data
+    if os.path.isfile(csvAllResults): os.remove(csvAllResults)
