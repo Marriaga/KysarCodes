@@ -10,6 +10,7 @@ import subprocess
 import inspect
 import shutil
 import timeit
+import time
 import glob
 import csv
 import os
@@ -217,7 +218,10 @@ def Timeme(funct,var,NN=10,NNN=10,show=True):
         if show: print(str(i)+': '+str(TimeDiff))
     return TotTime/NN
 
-        
+def Pause(seconds):
+    time.sleep(seconds)
+    
+
 #Get data from CSV format to numpy matrix format
 def getMatfromCSV(fn):     
     data=[]
