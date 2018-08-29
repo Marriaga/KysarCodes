@@ -16,7 +16,19 @@ from matplotlib import cm
 import matplotlib.colors as cols
 import MA.Tools as MATL
 
+# === Operate on images
+def FlipImage(NameIn,NameOut):
+    Ext = NameIn[-3:].lower()
+    isTif = (Ext == 'tif' or Ext == 'iff')
+    Img = Image.open(NameIn)
+    FlippedImage = Img.transpose(Image.FLIP_LEFT_RIGHT)
 
+    if isTif:
+        xres,yres = Img.info['resolution']
+        kwargsdict={282:xres, 283:yres, 270: 'ImageJ=1.51w\nunit=micron\n',296:1}
+        FlippedImage.save(NameOut,tiffinfo=kwargsdict)
+    else: 
+        FlippedImage.save(NameOut)
 
 # === Conversion between formats of Matrices
 def Image2np(Mpix):
