@@ -40,7 +40,7 @@ class T(unittest.TestCase):
         p,k,m,u = vmf.FitVMU(1)
 
         self.assertEqual(np.round(np.sum(p)+u,decimals=5),1.0)
-        self.assertEqual(np.round(k[0],decimals=5),13.29075)
+        self.assertEqual(np.round(k[0],decimals=5),13.29071)
         
     @classmethod
     def tearDownClass(cls):
