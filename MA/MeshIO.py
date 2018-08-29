@@ -9,6 +9,7 @@ import numpy.lib.recfunctions as nprec
 import sys
 import os
 import MA.Tools as MATL
+import MA.ImageProcessing as MAIP
 import xml.dom.minidom
 
 
@@ -238,6 +239,18 @@ class CNodes(object):
             self.is_sequencial=True
             self.si=MN[0]
         
+    def RotateAndTranslate(self,R,T):
+        x = self.Mat[['x','y','z']]
+        Coords = x.view((x.dtype[0], len(x.dtype.names))).copy()
+        RCT = MAIP.CoordsObj.ApplyRotationAndTranslation(Coords,R,T,pavg=0)
+
+        self.Mat['x'] =  RCT[:,0].copy()
+        self.Mat['y'] =  RCT[:,1].copy()
+        self.Mat['z'] =  RCT[:,2].copy()
+
+
+
+
 # Class for Elements
 class CElements(object):
     def __init__(self,Matrix=None,**kwargs):
