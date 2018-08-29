@@ -130,23 +130,15 @@ def MakeMPixMesh(npdata,verbose=True,Scale=(1.0,1.0,1.0),ColFile=None,ColMat=Non
     return Nodes,Faces,Colors    
     
 def Make3DSurfaceFromHeightMapTiff(File,OFile=None,NoZeros=False):
-    name,ext = os.path.splitext(File)
+    name,_ = os.path.splitext(File)
     if OFile is None:
         outfile=name+"_out.ply"
     else:
         outfile=MATL.FixName(OFile,"ply")
-    myimg=Image.open(File)
-    try:
-        xres,yres = myimg.info['resolution']
-    except:
-        try:
-            xres,yres = myimg.info['dpi']
-        except:
-            print("No Resolution Info")
-            xres=1.0
-            yres=1.0
-    Mpix = np.copy(np.asarray(myimg))
-    return MakeMPixMesh(Mpix,Scale=(1/xres,1/yres,1.0),Expfile=outfile,NoZeros=NoZeros)   
+
+    Mpix,res = MAIP.GetImageMatrix(File,Silent=True,GetTiffRes=True)
+
+    return MakeMPixMesh(Mpix,Scale=(1/res[0],1/res[1],1.0),Expfile=outfile,NoZeros=NoZeros)   
     
     
 if __name__ == "__main__":
