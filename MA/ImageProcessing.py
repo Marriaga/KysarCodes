@@ -83,6 +83,16 @@ def SaveImageRaw(Matrix,Name,TifRes=None,resolution=None):
     Name=MATL.FixName(Name,'.tif')
     Image.fromarray(np.float32(Matrix),mode="F").save(Name,"TIFF",dpi=resolution)   
 
+def SaveTif(Matrix,Name,resolution=None):
+    '''Save pixel data in matrix as 32-bit float on a tif file.'''
+    Name=MATL.FixName(Name,'.tif')
+    MyImage = Image.fromarray(np.float32(Matrix),mode="F")
+    if resolution:
+        xres,yres = resolution
+        kwargsdict={282:xres, 283:yres, 270: 'ImageJ=1.51w\nunit=micron\n',296:1}
+        MyImage.save(Name,tiffinfo=kwargsdict)
+    else: 
+        MyImage.save(Name)
 
 # === Save/Show Images    
 def SaveShowImage(Matrix,Root=None,Suffix=None):
