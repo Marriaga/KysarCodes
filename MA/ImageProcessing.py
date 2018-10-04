@@ -802,6 +802,156 @@ class ImageFit(object):
 
 
         
+
+
+
+
+# ADDITIONAL DRAWING FUNCTIONS IN PIL
+
+def drawCircle(Draw,xy,diameter,**kwargs):
+    x, y =xy
+    diameter = int(diameter)-1
+    r = int(diameter/2)
+    c = diameter%2
+
+    ltrb = [ x-r , y-r , x+r+c , y+r+c]
+    Draw.ellipse(ltrb, **kwargs)
+
+def draw_ellipse(image, bounds, width=3, outline='white', antialias=2):
+    """Improved ellipse drawing function, based on PIL.ImageDraw.
+    
+    TODO: 1- Use Draw as input instead of image. 2- For speed only do AA on the ellipse instead of the whole image.
+    """
+
+    # Use a single channel image (mode='L') as mask.
+    # The size of the mask can be increased relative to the imput image
+    # to get smoother looking results. 
+    mask = Image.new(
+        size=[int(dim * antialias) for dim in image.size],
+        mode='L', color='black')
+    draw = ImageDraw.Draw(mask)
+
+    # draw outer shape in white (color) and inner shape in black (transparent)
+    for offset, fill in (width/-2.0, 'white'), (width/2.0, 'black'):
+        left, top = [(value + offset) * antialias for value in bounds[:2]]
+        right, bottom = [(value - offset) * antialias for value in bounds[2:]]
+        draw.ellipse([left, top, right, bottom], fill=fill)
+
+    # downsample the mask using PIL.Image.LANCZOS 
+    # (a high-quality downsampling filter).
+    mask = mask.resize(image.size, Image.LANCZOS)
+    # paste outline color to input image through the mask
+    image.paste(outline, mask=mask)
+
+def drawArrow(Draw,xyi,vec,scale=100,width=0.13,color='black',tip="rounded"):
+    ''' Draw an arrow given an origin point and a vector direction'''
+    xyi=np.array(xyi)
+    vec=np.array(vec)
+    L=np.linalg.norm(vec)
+    s=vec[1]/L
+    c=vec[0]/L
+    RM=np.array([[c,-s],[s,c]])
+
+    angle=45
+    sa,ca = np.sin(np.radians(angle)),np.cos(np.radians(angle))
+    dl=1/3
+
+    P0_R = np.array([0,0])
+    P1_R = np.array([1,0])
+    P2_R = np.array([1-ca*dl,sa*dl])
+    P3_R = np.array([1-ca*dl,-sa*dl])
+
+    P0 = tuple(RM@P0_R*L*scale + xyi)
+    P1 = tuple(RM@P1_R*L*scale + xyi)
+    P2 = tuple(RM@P2_R*L*scale + xyi)
+    P3 = tuple(RM@P3_R*L*scale + xyi)
+
+    wd = int(scale*width)
+    Draw.line([P0,P1],fill=color,width=wd)
+    Draw.line([P2,P1],fill=color,width=wd)
+    Draw.line([P3,P1],fill=color,width=wd)
+
+    if tip=="rounded":
+        drawCircle(Draw,P0,wd,fill=color)
+        drawCircle(Draw,P1,wd,fill=color)
+        drawCircle(Draw,P2,wd,fill=color)
+        drawCircle(Draw,P3,wd,fill=color)
+    else:
+        P4_R = np.ceil(P1_R*L*scale + np.array([sa,ca])*((wd-1)/2)) - np.array([1,0])
+        P5_R = np.ceil(P1_R*L*scale + np.array([1/sa,0])*((wd-1)/2)) - np.array([1,0])
+        P6_R = np.ceil(P1_R*L*scale + np.array([sa,-ca])*((wd-1)/2)) - np.array([1,0])
+        P1x = tuple(np.array(P1) - np.array([1,0]))
+        P4 = tuple(RM@P4_R + xyi)
+        P5 = tuple(RM@P5_R + xyi)
+        P6 = tuple(RM@P6_R + xyi)
+        Draw.polygon([P1x,P4,P5,P6], fill=color)
+
+
+def drawTextWithOutline(Draw,xy,text,font,text_color='white',outl_width=3,outl_color='black'):
+    x,y = xy
+    
+    Draw.text((x+0*outl_width, y+outl_width),text,outl_color,font=font)
+    Draw.text((x+outl_width, y-0*outl_width),text,outl_color,font=font)
+    Draw.text((x-outl_width, y+0*outl_width),text,outl_color,font=font)
+    Draw.text((x-0*outl_width, y-outl_width),text,outl_color,font=font)
+    
+    s=np.sqrt(2)
+    Draw.text((x+outl_width/s, y+outl_width/s),text,outl_color,font=font)
+    Draw.text((x+outl_width/s, y-outl_width/s),text,outl_color,font=font)
+    Draw.text((x-outl_width/s, y+outl_width/s),text,outl_color,font=font)
+    Draw.text((x-outl_width/s, y-outl_width/s),text,outl_color,font=font)
+    
+    Draw.text((x, y),text,text_color,font=font)
+
+def drawScalebar(Draw,barLength=200,scale=1.0,font=None):
+    ''' Draw Scale bar.
+
+        barLength - Length in world coordinates'''
+    
+    cornerdist = int(0.93*2048)
+    scalebartext = str(barLength)+" microns"
+    scalebar = int(barLength/scale)
+
+    xtext,ytext = Draw.textsize(scalebartext,font=font)
+    Draw.rectangle([cornerdist-scalebar,cornerdist,cornerdist,cornerdist-scalebar/10],fill=(20,20,20),outline='black')
+    Draw.text((cornerdist-scalebar/2-xtext/2, cornerdist+ytext/10),scalebartext,'black',font=font)
+
+
+def MarkPointsInImage(ImageName,OutputName,Data,radius=10,offset=8,fontSize=48):
+    ColSequence = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33','#a65628','#f781bf','#999999'] #http://colorbrewer2.org
+    BImg = Image.open(ImageName)
+    Draw = ImageDraw.Draw(BImg)
+    font = ImageFont.truetype("ariblk.ttf", fontSize)
+
+    scale = 1400/2048.0 #microns/pixel
+
+    for index, row in Data.iterrows():
+        x_raw,y_raw= row["X_T"],row["Y_T"]
+        label = row["Position"]
+        avm = np.radians(row["AVM_flat"])
+        x,y = x_raw/scale,2048-y_raw/scale
+      
+        #print("Draw Arrows")
+        drawArrow(Draw,(x,y),(np.cos(avm),-np.sin(avm)))  
+        #print("Make Ellipse")
+        Draw.ellipse((x-radius+1, y-radius+1, x+radius, y+radius), fill=ColSequence[index])
+        draw_ellipse(BImg,(x-radius+1, y-radius+1, x+radius, y+radius), outline='black')
+        #print("Draw Text")
+        drawTextWithOutline(Draw,(x+offset,y+offset),label,font,text_color=ColSequence[index])
+
+    #print("Draw Scalebar")
+    scalebarfont = ImageFont.truetype("ariblk.ttf", int(fontSize*0.8))
+    drawScalebar(Draw,barLength=200,scale=scale,font=scalebarfont)
+
+    BImg.save(OutputName)
+
+
+
+
+
+
+
+        
 # SPECIAL IMAGES
 
 # Make image with fibers given by raised cosine for ang and freq    
