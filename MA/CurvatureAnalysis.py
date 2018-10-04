@@ -239,11 +239,11 @@ def MakeSmoothMeshlabScript(FilePath):
         </FilterScript>
         """)
 
-def SmoothPly(plyInput,plySmooth,ScriptFileName=None,Verbose=False):
+def SmoothPly(plyInput,plySmooth,ScriptFileName=None,Verbose=False,MeshLabPath=None):
     if ScriptFileName is None:
         ScriptFileName=os.path.join(os.path.dirname(plyInput),"SmoothScript")
         MakeSmoothMeshlabScript(ScriptFileName)
-    MATL.RunMeshLabScript(plyInput,ScriptFileName,Output_Path=plySmooth,Verbose=Verbose)
+    MATL.RunMeshLabScript(plyInput,ScriptFileName,Output_Path=plySmooth,Verbose=Verbose,MeshLabPath=MeshLabPath)
 
 def GetVectXYAng(Vec):
     X=Vec[:,0]

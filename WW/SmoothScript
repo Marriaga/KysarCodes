@@ -1,0 +1,43 @@
+
+        <!DOCTYPE FilterScript>
+        <FilterScript>
+         <filter name="Taubin Smooth">
+          <Param value="0.5"  type="RichFloat" description="Lambda" name="lambda"/>
+          <Param value="-0.53"  type="RichFloat" description="mu" name="mu"/>
+          <Param value="10"  type="RichInt" description="Smoothing steps" name="stepSmoothNum"/>
+          <Param value="false"  type="RichBool" description="Affect only selected faces" name="Selected"/>
+         </filter>
+         <filter name="Simplification: Quadric Edge Collapse Decimation">
+          <Param value="1000"  type="RichInt" description="Target number of faces" name="TargetFaceNum"/>
+          <Param value="0"  type="RichFloat" description="Percentage reduction (0..1)" name="TargetPerc"/>
+          <Param value="1"  type="RichFloat" description="Quality threshold" name="QualityThr"/>
+          <Param value="false"  type="RichBool" description="Preserve Boundary of the mesh" name="PreserveBoundary"/>
+          <Param value="1"  type="RichFloat" description="Boundary Preserving Weight" name="BoundaryWeight"/>
+          <Param value="false"  type="RichBool" description="Preserve Normal" name="PreserveNormal"/>
+          <Param value="false"  type="RichBool" description="Preserve Topology" name="PreserveTopology"/>
+          <Param value="true"  type="RichBool" description="Optimal position of simplified vertices" name="OptimalPlacement"/>
+          <Param value="false"  type="RichBool" description="Planar Simplification" name="PlanarQuadric"/>
+          <Param value="false"  type="RichBool" description="Weighted Simplification" name="QualityWeight"/>
+          <Param value="true"  type="RichBool" description="Post-simplification cleaning" name="AutoClean"/>
+          <Param value="false"  type="RichBool" description="Simplify only selected faces" name="Selected"/>
+         </filter>
+         <filter name="Taubin Smooth">
+          <Param value="0.5"  type="RichFloat" description="Lambda" name="lambda"/>
+          <Param value="-0.53"  type="RichFloat" description="mu" name="mu"/>
+          <Param value="10"  type="RichInt" description="Smoothing steps" name="stepSmoothNum"/>
+          <Param value="false"  type="RichBool" description="Affect only selected faces" name="Selected"/>
+         </filter>
+         <filter name="Subdivision Surfaces: Loop">
+          <Param enum_cardinality="3" enum_val1="Enhance regularity" enum_val0="Loop" value="1" enum_val2="Enhance continuity"  type="RichEnum" description="Weighting scheme" name="LoopWeight"/>
+          <Param value="3"  type="RichInt" description="Iterations" name="Iterations"/>
+          <Param min="0" value="50"  type="RichAbsPerc" description="Edge Threshold" max="100.0" name="Threshold"/>
+          <Param value="false"  type="RichBool" description="Affect only selected faces" name="Selected"/>
+         </filter>
+         <filter name="Taubin Smooth">
+          <Param value="0.5"  type="RichFloat" description="Lambda" name="lambda"/>
+          <Param value="-0.53"  type="RichFloat" description="mu" name="mu"/>
+          <Param value="10"  type="RichInt" description="Smoothing steps" name="stepSmoothNum"/>
+          <Param value="false"  type="RichBool" description="Affect only selected faces" name="Selected"/>
+         </filter>
+        </FilterScript>
+        

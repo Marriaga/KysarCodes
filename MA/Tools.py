@@ -189,13 +189,19 @@ def CircularMovingAverage(InputVector, n=3, LastIsFirst=True):
     return out
 
 #Run a MeshLab Script
-def RunMeshLabScript(Mesh_Path,Script_Path,Output_Path=None,Verbose=False):
+def RunMeshLabScript(Mesh_Path,Script_Path,Output_Path=None,Verbose=False,MeshLabPath=None):
     if Output_Path is None:
         Base,Ext = os.path.splitext(Mesh_Path)
         Output_Path = Base + "_out" + Ext
     
     SetupOutput(Output_Path)
-    cmd = "meshlabserver -i " + Mesh_Path + " -o " + Output_Path + " -s " + Script_Path
+    if MeshLabPath is None:
+        prog = "meshlabserver"
+    else:
+        prog = '"'+os.path.join(MeshLabPath,"meshlabserver")+'"'
+        
+
+    cmd = prog+' -i '+ Mesh_Path + " -o " + Output_Path + " -s " + Script_Path
     print("  "+cmd)
     RunProgram(cmd,Verbose)
     print("  Meshlab Script Finished")
