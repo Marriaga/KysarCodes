@@ -90,6 +90,15 @@ def rename(src,dest):
     if os.path.isfile(dest): os.remove(dest)
     os.rename(src,dest)
 
+def AnyIsNew(Inputs,Output,Force=False):
+    '''Check if any of the Inputs is newer than the Output'''
+    if Force or (Output is None) or (not os.path.isfile(Output)):
+        return True
+    for Input in Inputs:
+        if IsNew(Input,Output,Force=Force): return True
+    return False
+
+
 def IsNew(Input,Output,Force=False):
     '''Check if the Input is newer than the Output'''
     if Force or (Output is None) or (not os.path.isfile(Output)):
@@ -123,6 +132,18 @@ def QPlot(x,y):
     axs  = fig.add_subplot(111)
     for yy in y:
         axs.plot(x,yy,marker='.',ls='-',label='',markersize=5)
+    fig.show()
+    plt.waitforbuttonpress()
+    plt.close(fig)
+
+
+def QMPlot(Xa,Ya,marker=""):
+    fig = plt.figure(figsize=(8,6))
+    axs  = fig.add_subplot(111)
+    linelist=["-",":","-."]
+    for x,y in zip(Xa,Ya):
+        axs.plot(x,y,marker=marker,ls=linelist[0],label='',markersize=5)
+        linelist.insert(0, linelist.pop())
     fig.show()
     plt.waitforbuttonpress()
     plt.close(fig)
