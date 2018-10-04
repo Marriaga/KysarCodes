@@ -394,9 +394,7 @@ def ComputeFitParameters(Base,FitObject,Force=False):
     if Force or MATL.IsNew(tiffile,plyFile_RT): 
         print("Fit To Surface...")
 
-        R,T = FitObject.FitNewImage(tiffile)
-        print(R,T)
-
+        R,T,AvgDZ = FitObject.FitNewImage(tiffile)
         Ply = MAMIO.PLYIO()
         Ply.LoadFile(plyFile_Smooth)
         Nodes,Elems = Ply.ExportMesh()
@@ -404,6 +402,9 @@ def ComputeFitParameters(Base,FitObject,Force=False):
         Ply.ImportMesh(Nodes,Elems)
         Ply.SaveFile(plyFile_RT)  
 
+        #Save File
+        Data = pd.DataFrame(data=[[R[0],R[1],R[2],T[0],T[1],T[2],AvgDZ]], columns=["R_x","R_y","R_z","T_x","T_y","T_z","Avg_DZ"])
+        Data.to_csv(csvFile_GeometryFitResults,index=False)
 def ProcessPoints(Base,PointsDF,Force=False,BaseAngleFiles=None):
     plyFile_Curvs = Base + SUF_plyFile_Curvs
     csvFile_PointsIntData = Base + SUF_csvFile_PointsIntData

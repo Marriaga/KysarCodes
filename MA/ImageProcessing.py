@@ -187,7 +187,7 @@ def OpenPILRaw(FName,dims=None,PrecBits=None,ConvertL=False):
     return myimg
     
 # TRANSFORM IMAGES
-    
+
 def ScaleTif(TifSource,TifTarget,ScaleFactor):
     ''' TifTarget = TifSource * ScaleFactor'''
     Mpix,res = GetImageMatrix(TifSource,Silent=True,GetTiffRes=True)
@@ -590,11 +590,11 @@ class ImageFit(object):
         self.RT0a = self.getRTarr(self.GetInitialization())
         # R,T = self.GradientDescent(self.RT0a)
         # R,T = self.getRTtup(self.RT0a)
-        R,T = self.ScipyOptimize(self.RT0a,silent=silent)
+        R,T,AvgDZ = self.ScipyOptimize(self.RT0a,silent=silent)
 
         RM = CoordsObj.getRotationMatrix(R)
         TZero = T + self.O_New - np.dot(self.O_New,np.transpose(RM))
-        return R,TZero
+        return R,TZero,AvgDZ
 
 
     def GetInitialization(self):
@@ -738,7 +738,7 @@ class ImageFit(object):
         # OptResult = spoptimize.basinhopping(self.CostFunction,RTin,minimizer_kwargs={"jac":self.ComputeGradientCost})
         if not silent: print(OptResult.message)
         R,T=self.getRTtup(OptResult.x)
-        return R,T
+        return R,T,OptResult.fun
 
     def GradientDescent(self,RTin):
         Gamma=1E-10
@@ -801,7 +801,7 @@ class ImageFit(object):
 
 
 
-        
+
 
 
 
