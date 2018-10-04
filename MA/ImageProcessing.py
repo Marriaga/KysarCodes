@@ -186,6 +186,13 @@ def OpenPILRaw(FName,dims=None,PrecBits=None,ConvertL=False):
     if ConvertL: myimg=myimg.convert("L")
     return myimg
     
+# TRANSFORM IMAGES
+    
+def ScaleTif(TifSource,TifTarget,ScaleFactor):
+    ''' TifTarget = TifSource * ScaleFactor'''
+    Mpix,res = GetImageMatrix(TifSource,Silent=True,GetTiffRes=True)
+    Mpix*=ScaleFactor
+    SaveTif(Mpix,TifTarget,resolution=res)
     
 def SmoothImage(Matrix,N=1):
     '''Smooths a Matrix with kernel [0 1 0; 1 4 1; 0 1 0]/8'''
