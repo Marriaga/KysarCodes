@@ -833,7 +833,8 @@ class MyMesh(object):
             C+=[P['x'],P['y'],P['z']]
         return C/3.0    
 
-    def ComputeCurvatures(self):    
+    def ComputeCurvatures(self):
+        # Run ComputeNormals() before this function 
         self.NAmix  = np.zeros(self.NNodes,dtype='f8') #A
         self.NARing = np.zeros(self.NNodes,dtype='f8') #A
         self.NAreaG = np.empty(self.NNodes,dtype='f8') #A
@@ -977,6 +978,8 @@ class MyMesh(object):
         self.Nkmax  = np.zeros(self.NNodes,dtype='f8') #k of max curvature (from diheadral) 
         self.Nktype = np.zeros(self.NNodes,dtype='u1') #type of S (0: only positive, 1: only negative, 2: mixed)
         self.Nkang  = np.zeros(self.NNodes,dtype='f8') #angle of zero/min curvature
+        self.NMM1= np.zeros((self.NNodes,3),dtype='f8') #PD of min magnitude curvature (from diheadral)  
+        self.NMM2= np.zeros((self.NNodes,3),dtype='f8') #PD of min magnitude curvature (from diheadral)  
         
         
         if usesmooth:
@@ -985,7 +988,7 @@ class MyMesh(object):
             ShapeOperator=self.NSdihe
         
         for n in range(self.NNodes):
-            Vmax,Vmin,Vnor,kmax,kmin,Nktype,alph,VMM1,_VMM2 = MyMesh.IndividualCurvPrincipalDirections(ShapeOperator[n],self.NHv[n]) 
+            Vmax,Vmin,Vnor,kmax,kmin,Nktype,alph,VMM1,VMM2 = MyMesh.IndividualCurvPrincipalDirections(ShapeOperator[n],self.NHv[n]) 
             # if n==268:
             #     ShapeOperator[n][0,1]=999
             self.NMaxCd[n] = Vmax
@@ -996,6 +999,8 @@ class MyMesh(object):
             self.Nktype[n]=Nktype
             self.Nkang[n]=alph
             self.NMinMag[n]=VMM1
+            self.NMM1[n]=VMM1
+            self.NMM2[n]=VMM2
             
     def SmoothCurvatures(self,N=1):
         for _ in range(N): #Smooth N times
@@ -1014,7 +1019,7 @@ class MyMesh(object):
                 if Nns>0: Sn/=Nns 
                 self.NSdiheS[n]=0.5*(S+Sn) #SHOULD BE S+Sn
     
-    def ReadjustMinCurvDirections(self,Director_Vector=None,Auto_Director_Vector_Type=0,Make_Zero_Boundary=True,Aux_Director_Vector=None):
+    def ReadjustMinCurvDirections(self,Director_Vector=None,Auto_Director_Vector_Type=0,Make_Zero_Boundary=True,Aux_Director_Vector=None,Director_Vector_List=None):
         '''
             Function to readjust the vectors of minimum curvature.
 
@@ -1022,7 +1027,8 @@ class MyMesh(object):
                 Director_Vector (default:None) -- Vector that determines the direction 
                 Auto_Director_Vector_Type (default:0) -- Automatic director vector based on local or global average direction. 
                 Make_Zero_Boundary (default: True) -- No vector on boundary
-                Aux_Director_Vector (default:None) -- Vector that determines the orientation after aligning with the Director_Vector 
+                Aux_Director_Vector (default:None) -- Vector that determines the orientation after aligning with the Director_Vector
+                Director_Vector_List (default:None) -- List of Lists of vectors [[P1,V1],[P2,V2],...] for precise orientation
 
             Values for "Auto_Director_Vector_Type". Automatic Computation of Director Vector is based on:
                 0 -- GLOBAL Average direction
@@ -1043,12 +1049,21 @@ class MyMesh(object):
 
         if Director_Vector is not None:
             Director_Vector=np.array(Director_Vector)
+
+        elif Director_Vector_List is not None:
+            N_dpoints = len(Director_Vector_List)
+            DirVecPoints = np.zeros((N_dpoints,3),dtype='f8')
+            DirVecVectors = np.zeros((N_dpoints,3),dtype='f8')
+            for i in range(len(Director_Vector_List)):
+                DirVecPoints[i,:]=np.array(Director_Vector_List[i][0])
+                DirVecVectors[i,:]=np.array(Director_Vector_List[i][1])
+
         else: # Automatic Computation of Director Vector
             if Auto_Director_Vector_Type == 0:
                 Director_Vector=np.zeros(3)
                 for n in range(self.NNodes):
                     if not self.NIsB[n]:
-                        Director_Vector+=self.NMinMag[n]
+                        Director_Vector+=self.NMM1[n]
                 Director_Vector/=np.linalg.norm(Director_Vector)
             elif Auto_Director_Vector_Type > 7:
                 raise ValueError(" Auto_Director_Vector_Type has undefined value ("+str(Auto_Director_Vector_Type)+")")
@@ -1056,7 +1071,7 @@ class MyMesh(object):
                 Compute_Local_Average=True
 
 
-        VTemp=np.zeros_like(self.NMinMag)
+        VTemp=np.zeros_like(self.NMM1)
         for n in range(self.NNodes): # Go node-by-node to fix vector
             if not (self.NIsB[n] and Make_Zero_Boundary): #Make boundary vectors 0 if desired
                 
@@ -1082,11 +1097,36 @@ class MyMesh(object):
                             Node_set.add(n) #Add Node
                     Director_Vector=np.zeros(3)
                     for ns in Node_set:
-                        Director_Vector+=self.NMinMag[ns]
+                        Director_Vector+=self.NMM1[ns]
                     Director_Vector/=np.linalg.norm(Director_Vector)
-                
-                
-                Va=self.NMinMag[n] # Get vector of min magnitude
+
+                if Director_Vector_List is not None:
+                    # Find closest 3 points (p1,p2,p3) and get director vector as v1 + v2*d1/d2 + v3*d1/d3
+                    P=self.Nodes.Mat[n]
+                    Pos = np.array([P['x'],P['y'],P['z']])
+                    Distances = np.sum((DirVecPoints-Pos)**2,axis=1)**0.5
+                    Isort = np.argsort(Distances)
+                    d1=Distances[Isort[0]]
+                    Director_Vector = DirVecVectors[Isort[0],:].copy()
+
+                    # doprint = Distances[3]<50
+
+                    # if doprint:
+                    #     print("DirVecVectors[Isort[0],:]",DirVecVectors[Isort[0],:])
+                    for i in range(1,min(N_dpoints,3)):
+                        # if doprint:
+                        #     print("i",i,DirVecVectors[Isort[i],:],d1/Distances[Isort[i]])
+                        Director_Vector += DirVecVectors[Isort[i],:] * d1/Distances[Isort[i]]
+                    Director_Vector/=np.linalg.norm(Director_Vector)
+                    # if doprint:
+                    #     print("Pos=",Pos)
+                    #     #print("Distances=",Distances)
+                    #     print("d1=",d1)
+                    #     print("d2=",Distances[Isort[1]])
+                    #     print("d3=",Distances[Isort[2]])
+                    #     print("Director_Vector=",Director_Vector)
+                    
+                Va=self.NMM1[n] # Get vector of min magnitude
                 dot_Va_DirVec=np.dot(Director_Vector,Va) # Got dot product with director vector
                 dot_Va_AuxVec=np.dot(Aux_Director_Vector,Va) if Flag_Aux_Director_Vector else dot_Va_DirVec
                 if dot_Va_AuxVec<0: Va*=-1 #Set vector to correct direction
@@ -1094,7 +1134,7 @@ class MyMesh(object):
                 
                 if self.Nktype[n]==2: # If it has mixed curvature, i.e. pair of orientations with 0 curvature
                     # Compute second zero curvature vector
-                    Vb=np.cos(self.Nkang[n])*self.NMaxCd[n]-np.sin(self.Nkang[n])*self.NMinCd[n]
+                    Vb=self.NMM2[n]
                     Vb/=np.linalg.norm(Vb)
                     dot_Vb_DirVec=np.dot(Director_Vector,Vb)
                     # Set second if it closer to director vector
@@ -1103,8 +1143,33 @@ class MyMesh(object):
                         if dot_Vb_AuxVec<0: Vb*=-1
                         VTemp[n]=Vb
 
+                # Test Director Vector
+                # VTemp[n]=Director_Vector
+
         self.NMinMag=VTemp
 
+    def FlipMinCurvDirections(self,Aux_Director_Vector=None):
+        VTemp=np.zeros_like(self.NMM1)
+        isnotzero= np.logical_not(np.all(self.NMinMag == VTemp,axis=1))
+        isMM1 = np.logical_and(isnotzero,np.all(self.NMinMag == self.NMM1,axis=1))
+        isMM2 = np.logical_and(isnotzero,np.logical_not(isMM1))
+        VTemp[isMM1]=self.NMM2[isMM1]
+        VTemp[isMM2]=self.NMM1[isMM2]
+
+        if Aux_Director_Vector is not None:
+            Aux_Director_Vector=np.array(Aux_Director_Vector)
+            for n in range(self.NNodes): # Go node-by-node to fix vector
+                if isnotzero[n]:
+                    Va=VTemp[n] # Get vector of min magnitude
+                    dot_Va_AuxVec=np.dot(Aux_Director_Vector,Va)
+                    if dot_Va_AuxVec<0: Va*=-1 #Set vector to correct direction
+                    VTemp[n]=Va # Fix direction 
+
+
+
+
+
+        self.NMinMag=VTemp
 
     def GetAllFieldsForInterpolation(self):
         return [plbl for plbl in self.Nodes.PropTypes.Ltype if not plbl == 'N']
