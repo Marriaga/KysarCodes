@@ -244,7 +244,8 @@ def polar_figure(Angles,Values,ScatterPoints=None,xlabel=None,ylabel=None,title=
     # Figure with angle of Max RSquared
     fig, ax = plt.subplots(1,1,subplot_kw={"projection":"polar"})
     ax.plot(np.radians(Angles),Values,lw=2.0)
-    ax.scatter(np.radians([ScatterPoints[0]]),[ScatterPoints[1]],color='r',zorder=3)
+    maxAngle,MaxRSqred = ScatterPoints
+    ax.scatter(np.radians([maxAngle]),[MaxRSqred],color='r',zorder=3)
     setxaxis(ax,ylabel,xlims,xstep)
     setyaxis(ax,xlabel,ylims,ystep)
     if title is not None: ax.set_title(title)
@@ -254,6 +255,16 @@ def polar_figure(Angles,Values,ScatterPoints=None,xlabel=None,ylabel=None,title=
     #if ylabel is not None: ax.set_xlabel(ylabel, labelpad=-50)
     ax.yaxis.set_label_coords(-0.1, 0.5)
     
+
+    # Place box with maximum value
+    maxAngleStr = str(np.round(maxAngle,2)) +"$^o$"
+    maxRSqredStr = tp.std_notation(MaxRSqred,3)
+    textstr = "Angle = " + maxAngleStr + "\nR$^2$ = " + maxRSqredStr
+    props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+    ax.text(0.5, 0.95, textstr, transform=ax.transAxes, fontsize=10, va="top", ha="center",
+    verticalalignment='top',bbox=props)
+
+
     if savepath is None:
         plt.show()
     else:
