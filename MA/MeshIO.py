@@ -11,6 +11,7 @@ import os
 import MA.Tools as MATL
 import MA.ImageProcessing as MAIP
 import xml.dom.minidom
+import numba as nb
 
 
 # Get Endienness of System
@@ -248,6 +249,10 @@ class CNodes(object):
         self.Mat['y'] =  RCT[:,1].copy()
         self.Mat['z'] =  RCT[:,2].copy()
 
+    def GetNumpyPoints(self,Nlist):
+        if type(Nlist) is int:
+            Nlist = [Nlist]
+        return [np.array([P['x'],P['y'],P['z']]) for P in [self.Mat[n] for n in Nlist]]
 
 
 
@@ -646,7 +651,41 @@ class VTUIO(BaseIO):
         cell_data = self.doc.createElementNS("VTK", "CellData")
         self.piece.appendChild(cell_data)
         
-        
+
+# AUX FUNCTIONS FOR MY MESH
+@nb.jit(nopython=True)
+def _Aux_getBaricentricCoordinates(point,P1,P2,P3):
+        def mycross(r1,r2):
+            return r1[0]*r2[1]-r1[1]*r2[0]
+        r12 = P2-P1
+        r23 = P3-P2
+        r3p = point-P3
+        r2p = point-P2
+        iA = 1/mycross(r12,r23)    
+        l1 = mycross(r23,r3p)*iA   
+        l3 = mycross(r12,r2p)*iA
+        return l1,1-l1-l3,l3
+
+
+#@nb.jit(nopython=True)
+@nb.jit('f8[:,:](f8[:,:],f8,int32,f8[:,:],int32[:,:])')
+def _Aux_RenderTriangles(picture,scale,NElems,NodesMat,EN):
+    for nel in range(NElems):
+        P1=NodesMat[EN[nel,0],:]
+        P2=NodesMat[EN[nel,1],:]
+        P3=NodesMat[EN[nel,2],:]
+
+        Pmin = np.floor(np.amin([P1,P2,P3],axis=0)/scale).astype(int)
+        Pmax = np.ceil(np.amax([P1,P2,P3],axis=0)/scale+1).astype(int)
+
+        for xp in range(Pmin[0],Pmax[0]):
+            for yp in range(Pmin[1],Pmax[1]):
+                l1,l2,l3 = _Aux_getBaricentricCoordinates(np.array([xp*scale,yp*scale]),P1[0:2],P2[0:2],P3[0:2])
+                if (l1>=0 and l2>=0 and l3>=0 and l1<=1 and l2<=1 and l3<=1): #Is inside Triangle
+                    for node,bari in zip([P1,P2,P3],[l1,l2,l3]):
+                        picture[xp,yp]+=node[2]*bari
+ 
+    return picture      
 
 class MyMesh(object):
     def __init__(self,Nodes,Elems):
@@ -833,6 +872,88 @@ class MyMesh(object):
             C+=[P['x'],P['y'],P['z']]
         return C/3.0    
 
+    def InterceptVerticalSlice(self,P1,P2):
+        # Get line resulting from slicing the surface with a vertical plane that passes through P1 and P2
+
+        # Get Plane Equation
+        a,b = P1[1]-P2[1],P2[0]-P1[0]
+        d=a*P1[0]+b*P1[1]
+        def plane(p):
+            return a*p[0]+b*p[1]-d
+        def compare(pi,pf):
+            pli=plane(pi)
+            if pli==0.0: return 0.0
+            plf=plane(pf)
+            if plf==0.0: return 1.0
+            if pli*plf > 0.0: return None
+            return pli/(pli-plf)
+
+        # Find Starting edge
+        SideStart = None
+        for si in range(self.NSides):
+            if not self.SIsB[si]:
+                continue
+            ni,nf,ei,ef = [self.Sides[si][lab] for lab in ['ni','nf','ei','ef']]
+            pi,pf = self.Nodes.GetNumpyPoints([ni,nf])
+            #pi,pf = [(P['x'],P['y']) for P in [self.Nodes.Mat[nx] for nx in [ni,nf]]]
+            alpha = compare(pi,pf)
+            if alpha is not None:
+                SideStart=si
+                break
+        
+        # Raise Error if did not find starting edge
+        if SideStart is None:
+            raise ValueError("Plane does not intercept Edge of Membrane")
+        
+        # Get interpolated point
+        def GetInterpPoint(side):
+            ni,nf = [self.Sides[side][lab] for lab in ['ni','nf']]
+            pi,pf = self.Nodes.GetNumpyPoints([ni,nf])
+            alpha = compare(pi,pf)
+            if alpha is None:
+                return None
+            else:
+                return pi*(1-alpha) + pf*alpha
+
+
+        # March along elements that are cut by the slice
+        cside = SideStart
+        pelem = -1 # previous element
+        SlicePoints = [GetInterpPoint(cside)]
+        notOnEdge = True
+        while notOnEdge:
+            ei,ef = [self.Sides[cside][lab] for lab in ['ei','ef']]
+            celem = ef if ei==pelem else ei
+            for sd in self.ES[celem,:]:
+                if sd==cside:
+                    continue
+                P=GetInterpPoint(sd)
+                if P is not None:
+                    SlicePoints.append(P)
+                    cside=sd
+                    pelem=celem
+                    break
+            
+            if self.SIsB[cside]:
+                notOnEdge=False
+
+        return SlicePoints
+
+    def MakePicture(self,resolution=(512,512),simulate=False):
+        picture=np.zeros(resolution)
+
+        maxx=np.amax(self.Nodes.Mat['x'])
+        maxy=np.amax(self.Nodes.Mat['y'])
+        resx,resy = resolution
+        scale=max(maxx/resx,maxy/resy) #micron/pixel
+        
+        Nodes_temp = np.array([self.Nodes.Mat['x'],self.Nodes.Mat['y'],self.Nodes.Mat['z']]).T
+        EN_temp=np.reshape(np.concatenate(np.array(self.EN)),(-1,3))
+        if not simulate: picture = _Aux_RenderTriangles(picture,scale,self.NElems,Nodes_temp,EN_temp)
+        imgpix=MAIP.np2Image(picture)
+
+        return imgpix,scale
+
     def ComputeCurvatures(self):
         # Run ComputeNormals() before this function 
         self.NAmix  = np.zeros(self.NNodes,dtype='f8') #A
@@ -966,8 +1087,6 @@ class MyMesh(object):
         VMM2/=np.linalg.norm(VMM2)
         
         return Vmax,Vmin,Vnor,kmax,kmin,Nktype,alph,VMM1,VMM2
-
-
 
     def ComputeCurvaturePrincipalDirections(self,usesmooth=True):
         self.NMaxCd = np.zeros((self.NNodes,3),dtype='f8') #PD of max curvature (from diheadral)
@@ -1200,16 +1319,17 @@ class MyMesh(object):
 
     @staticmethod
     def _getBaricentricCoordinates(point,P1,P2,P3):
-        def mycross(r1,r2):
-            return r1[0]*r2[1]-r1[1]*r2[0]
-        r12 = P2-P1
-        r23 = P3-P2
-        r3p = point-P3
-        r2p = point-P2
-        iA = 1/mycross(r12,r23)    
-        l1 = mycross(r23,r3p)*iA   
-        l3 = mycross(r12,r2p)*iA
-        return l1,1-l1-l3,l3
+        return _Aux_getBaricentricCoordinates(point,P1,P2,P3)
+        # def mycross(r1,r2):
+        #     return r1[0]*r2[1]-r1[1]*r2[0]
+        # r12 = P2-P1
+        # r23 = P3-P2
+        # r3p = point-P3
+        # r2p = point-P2
+        # iA = 1/mycross(r12,r23)    
+        # l1 = mycross(r23,r3p)*iA   
+        # l3 = mycross(r12,r2p)*iA
+        # return l1,1-l1-l3,l3
 
     def _quickInterp(self,field_lbl,nodes,baris):
         val=0.0
