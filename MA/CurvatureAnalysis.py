@@ -3,6 +3,7 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import sys
+import shutil
 
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
@@ -12,7 +13,10 @@ import scipy.special as sps
 import scipy.stats as spst
 import seaborn as sns
 import statsmodels.formula.api as smf
+import statsmodels.api as sm
 from pandas.plotting import table as pdtable
+from PIL import Image, ImageDraw, ImageFont
+
 
 import MA.CSV3D as MA3D
 import MA.FigureProperties as MAFP
@@ -170,6 +174,7 @@ SUF_pngFile_Streamlines = "_VTU_Streamlines.png"
 SUF_pngFile_Arrows = "_VTU_Arrows.png"
 SUF_pngFile_Streamlines_WithVM = "_VTU_Streamlines_WithVM.png"
 SUF_pngFile_Arrows_WithVM = "_VTU_Arrows_WithVM.png"
+SUF_pngFile_Streamlines_WithAll = "_VTU_Streamlines_WithAll.png"
 
 
 def flipIfNeeded(inputimage,Force=False):
@@ -517,6 +522,42 @@ def CombineAndProcessMembraneData(csvFile_PointsCombinedResults,csvFile_PointsCu
     
     NewData.to_csv(csvFile_PointsCombinedResults,index=False)
 
+def MakeSlice(plyFile_RT,P1=[0,0],P2=[1,1]):
+    Ply = MAMIO.PLYIO()
+    Ply.LoadFile(plyFile_RT)
+    Nodes,Elems = Ply.ExportMesh()
+    MyM = MAMIO.MyMesh(Nodes,Elems)
+    IPoints = MyM.InterceptVerticalSlice(P1,P2)
+
+    LL=len(IPoints)
+    C=np.zeros((LL,3))
+    for i,p in enumerate(IPoints):
+        for j in range(3):
+            C[i,j] = p[j]
+    return C
+
+def MakeLoadSlice(plyFile_RT,X=None,Y=None,Force=False):
+    if (X is not None) and (Y is not None):
+        raise ValueError("Cannot have both X and Y set...")
+    elif (X is not None):
+        lab='_X_'+str(X)
+        P1=[X,0]
+        P2=[X,1]
+    elif (Y is not None):
+        lab='_Y_'+str(Y)
+        P1=[0,Y]
+        P2=[1,Y]
+    else:
+        raise ValueError("Either X or Y must be set...")
+
+    SliceFile = plyFile_RT+lab+".npy"
+    if Force or MATL.IsNew(plyFile_RT,SliceFile):
+        C = MakeSlice(plyFile_RT,P1=P1,P2=P2)
+        np.save(SliceFile,C)
+    else:
+        C= np.load(SliceFile)
+    return C
+
 ### MASTER FUNCTIONS ###
 
 def getBaseNameFromFolder(File,Base=None):
@@ -584,6 +625,43 @@ def ComputeFitParameters(Base,FitObject,Force=False):
         Data = pd.DataFrame(data=[[R[0],R[1],R[2],T[0],T[1],T[2],AvgDZ]], columns=["R_x","R_y","R_z","T_x","T_y","T_z","Avg_DZ"])
         Data.to_csv(csvFile_GeometryFitResults,index=False)
 
+def ProcessPoints(Base,PointsDF,Force=False,BaseAngleFiles=None):
+    plyFile_Curvs = Base + SUF_plyFile_Curvs
+    csvFile_PointsIntData = Base + SUF_csvFile_PointsIntData
+    DirectionalityBase = Base
+    csvFile_PointsDirectionalityResults = Base + SUF_csvFile_PointsDirectionalityResults
+    csvFile_PointsCurvatureResults = Base + SUF_csvFile_PointsCurvatureResults
+    csvFile_GeometryFitResults = Base + SUF_csvFile_GeometryFitResults
+    csvFile_PointsCombinedResults = Base + SUF_csvFile_PointsCombinedResults
+    isRight,isKasza = GetExtraInfo(Base)
+
+    PointsList = PointsDF[['Position','X','Y']].values
+
+    if isRight:
+        SideSize = 1.38378*1024 if isKasza else 1.24296*1024
+        PointsList[:,1]*=(-1)
+        PointsList[:,1]+=SideSize
+
+    # Go to each point in mesh and extract interpolated results from ply mesh
+    if Force or MATL.IsNew(plyFile_Curvs,csvFile_PointsIntData):
+        print("Interpolating Points Info From Mesh...")
+        InterpolatePropertiesFromPLY(plyFile_Curvs,csvFile_PointsIntData,PointsList)
+
+    # Compute Directionality from Fiber Images 
+    if Force or checkNewFiberImages(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsList):
+        print("Compute Directionality for Points Info From Mesh...")
+        ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsDF,BaseAngleFiles=BaseAngleFiles)
+       
+    # Collect Angles from each point 
+    if Force or MATL.IsNew(csvFile_PointsIntData,csvFile_PointsCurvatureResults):
+        print("Process Interpolated Points Data...")
+        ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsCurvatureResults)
+
+    # Make csv with all data
+    if Force or MATL.AnyIsNew([csvFile_PointsDirectionalityResults,csvFile_PointsCurvatureResults,csvFile_GeometryFitResults],csvFile_PointsCombinedResults):
+        print("Combine and Generate additional results")
+        CombineAndProcessMembraneData(csvFile_PointsCombinedResults,csvFile_PointsCurvatureResults,csvFile_PointsDirectionalityResults,csvFile_GeometryFitResults)
+
 def ComputeStreamlines(Base,SmoothN=5,Force=False):
     plyFile_RT = Base + SUF_plyFile_RT
     vtuFile_base = Base + SUF_vtuFile_base
@@ -625,49 +703,12 @@ def ComputeStreamlines(Base,SmoothN=5,Force=False):
         print("Mark Fiber Directions in Arrows...")
         MAIP.MarkPointsInImage(pngFile_Arrows,pngFile_Arrows_WithVM,Data,radius=10,offset=8,fontSize=48)
 
-def ProcessPoints(Base,PointsDF,Force=False,BaseAngleFiles=None):
-    plyFile_Curvs = Base + SUF_plyFile_Curvs
-    csvFile_PointsIntData = Base + SUF_csvFile_PointsIntData
-    DirectionalityBase = Base
-    csvFile_PointsDirectionalityResults = Base + SUF_csvFile_PointsDirectionalityResults
-    csvFile_PointsCurvatureResults = Base + SUF_csvFile_PointsCurvatureResults
-    csvFile_GeometryFitResults = Base + SUF_csvFile_GeometryFitResults
-    csvFile_PointsCombinedResults = Base + SUF_csvFile_PointsCombinedResults
-    isRight,isKasza = GetExtraInfo(Base)
-
-    PointsList = PointsDF[['Position','X','Y']].values
-
-    if isRight:
-        SideSize = 1.38378*1024 if isKasza else 1.24296*1024
-        PointsList[:,1]*=(-1)
-        PointsList[:,1]+=SideSize
-
-    # Go to each point in mesh and extract interpolated results from ply mesh
-    if Force or MATL.IsNew(plyFile_Curvs,csvFile_PointsIntData):
-        print("Interpolating Points Info From Mesh...")
-        InterpolatePropertiesFromPLY(plyFile_Curvs,csvFile_PointsIntData,PointsList)
-
-    # Compute Directionality from Fiber Images 
-    if Force or checkNewFiberImages(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsList):
-        print("Compute Directionality for Points Info From Mesh...")
-        ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsDF,BaseAngleFiles=BaseAngleFiles)
-       
-    # Collect Angles from each point 
-    if Force or MATL.IsNew(csvFile_PointsIntData,csvFile_PointsCurvatureResults):
-        print("Process Interpolated Points Data...")
-        ProcessInterpolatedPointsData(csvFile_PointsIntData,csvFile_PointsCurvatureResults)
-
-    # Make csv with all data
-    if Force or MATL.AnyIsNew([csvFile_PointsDirectionalityResults,csvFile_PointsCurvatureResults,csvFile_GeometryFitResults],csvFile_PointsCombinedResults):
-        print("Combine and Generate additional results")
-        CombineAndProcessMembraneData(csvFile_PointsCombinedResults,csvFile_PointsCurvatureResults,csvFile_PointsDirectionalityResults,csvFile_GeometryFitResults)
-
-def CombineAndProcessAllData(FoldersNames,THEBASE):
+def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
     
     csvAllResults = os.path.join(THEBASE,"AllResults.csv")
     if os.path.isfile(csvAllResults): os.remove(csvAllResults)
 
-    PlotsBase = os.path.join(THEBASE,"Plots","Plot_")
+    PlotsBase = os.path.join(THEBASE,"Plots","")
     MATL.MakeNewDir(os.path.join(THEBASE,"Plots"))
 
     # Construct and save all data combined
@@ -699,7 +740,7 @@ def CombineAndProcessAllData(FoldersNames,THEBASE):
     AllData["Outlier"]=[p=="Bottom" and kmax<0 for p,kmax in zip(AllData["Position"],AllData["KMax"])]
     AllData=AllData[np.logical_not(AllData["Outlier"])] #Remove outlier
     
-    MakePlots = ""
+    MakePlots = "E"
     
     if "1" in MakePlots:    # Plot Fiber Direction vs Theta
         MAFP.regression_figure(AllData,"Theta","AVM",
@@ -731,7 +772,7 @@ def CombineAndProcessAllData(FoldersNames,THEBASE):
                 xlabel="Position of the point in the membrane",ylabel="Value of Curvature (1/$\\mu$m)",
                 title="Principal curvatures at different locations of the membranes",
                 savepath=PlotsBase+"Box_CurvatureVsPosition.pdf",
-                zeroline=True)
+                zeroline=True,addHyperCyl=True)
 
     if "5" in MakePlots:    # Box Relative Fiber Direction vs Theta
         MAFP.box_plot_figure(AllData,"Position",["AVM","Theta"],
@@ -750,58 +791,239 @@ def CombineAndProcessAllData(FoldersNames,THEBASE):
                 title="Absolute angles of fiber direction and curvaure",
                 savepath=PlotsBase+"Box_AbsoluteAngles.pdf",
                 )
-
-        for pos in ["Bottom","Left", "Center", "Right", "Top"]:
-            Subset=AllData[AllData["Position"]==pos]
-            Fibers=Subset["AVM_flat"]
-            ZeroC=Subset['ZeroC2_flat']
-            PrinC=Subset["PCN_flat"]
-            print(pos)
-            print("ANOVA")
-            Fstat,pval = spst.f_oneway(Fibers,ZeroC,PrinC)
-            print(Fstat,pval)
-            print("Fibers,ZeroC")
-            Fstat,pval = spst.ttest_ind(Fibers,ZeroC)
-            print(Fstat,pval)
-            Fstat,pval = spst.ttest_rel(Fibers,ZeroC)
-            print(Fstat,pval)
-            print("Fibers,PrinC")
-            Fstat,pval = spst.ttest_ind(Fibers,PrinC)
-            print(Fstat,pval)
-            Fstat,pval = spst.ttest_rel(Fibers,PrinC)
-            print(Fstat,pval)
-            print("ZeroC,PrinC")
-            Fstat,pval = spst.ttest_ind(ZeroC,PrinC)
-            print(Fstat,pval)
-            Fstat,pval = spst.ttest_rel(ZeroC,PrinC)
-            print(Fstat,pval)
-            
+        MAFP.box_plot_figure(AllData,"Position",["AVM_flat",'ZeroC2_flat',"PCN_flat"],
+                column_labels=["Fiber direction","Zero curvature direction","Principal direction"],
+                legend_title="Absolute angle:",
+                xlabel="Position of the point in the membrane",ylabel="Value of Angle (deg)",
+                title="Absolute angles of fiber direction and curvaure",
+                useSwarm=True,co2mk=["o","s","D"],
+                savepath=PlotsBase+"Swarm_AbsoluteAngles.pdf",
+                )
 
 
-    # fig, ax = plt.subplots(1,1,figsize=MAFP.HalfPage)
-    # ax.axhline(color="k",zorder=0)
-    # ax = box_plot_columns(AllData,"Position",["KMax","KMin"],"Curvature type","Curvature value",ax=ax,order=["Bottom","Left", "Center", "Right", "Top"])
-    # ax.set_title("Values of the Principal Curvatures")
-    # plt.show()
+        # for pos in ["Bottom","Left", "Center", "Right", "Top"]:
+        #     Subset=AllData[AllData["Position"]==pos]
+        #     Fibers=Subset["AVM_flat"]
+        #     ZeroC=Subset['ZeroC2_flat']
+        #     PrinC=Subset["PCN_flat"]
+        #     # Fstat,pval = spst.f_oneway(Fibers,ZeroC,PrinC)
+        #     # Fstat,pval = spst.ttest_ind(Fibers,ZeroC)
+        #     # Fstat,pval = spst.ttest_rel(Fibers,ZeroC)
+   
+    if "7" in MakePlots:    # Profile Cuts
+        Xcuts = [400,700,1000]
+        Ycuts = [400,700,1000]
 
-    
-    # Plot Principal Curvatures
-    # fig, ax = plt.subplots(1,1,figsize=MAFP.HalfPage)
-    # ax.axhline(color="k",zorder=0)
-    # ax = box_plot_columns(AllData,"Position",["AVM","Theta"],"Angle","Angle in degrees",ax=ax,order=["Bottom","Left", "Center", "Right", "Top"])
-    # ax.set_title("Values of angles")
-    # plt.show()
+        fig, axs = plt.subplots(2,3,figsize=MAFP.HalfPage, sharey='all', sharex='all')
+        # X-cuts
+        for ix,xval in enumerate(Xcuts):
+            print("Making cuts with X="+str(xval))
+            for FOLD in FoldersNames:
+                Base = os.path.join(THEBASE,FOLD,FOLD)
+                plyFile_RT = Base + SUF_plyFile_RT
+                CutPoints = MakeLoadSlice(plyFile_RT,X=xval)
+                axs[0,ix].plot(CutPoints[:,1],CutPoints[:,2])
+            axs[0,ix].set_xlabel('Y ($\mu$m)')
+            axs[0,ix].text(0.5, 0.95, "X="+str(xval)+ " ($\mu$m)", transform=axs[0,ix].transAxes, va="top", ha="center")
+            #axs[0,ix].set_title("X="+str(xval)+ " ($\mu$m)")
+        axs[0,0].set_ylabel('Z ($\mu$m)')
+
+        # Y-cuts
+        for iy,yval in enumerate(Ycuts):
+            print("Making cuts with Y="+str(yval))
+            for FOLD in FoldersNames:
+                Base = os.path.join(THEBASE,FOLD,FOLD)
+                plyFile_RT = Base + SUF_plyFile_RT
+                CutPoints = MakeLoadSlice(plyFile_RT,Y=yval)
+                axs[1,iy].plot(CutPoints[:,0],CutPoints[:,2])
+            axs[1,iy].set_xlabel('X ($\mu$m)')
+            axs[1,iy].text(0.5, 0.95, "Y="+str(yval)+ " ($\mu$m)", transform=axs[1,iy].transAxes, va="top", ha="center")
+            #axs[1,iy].set_title("Y="+str(xval)+ " ($\mu$m)")
+        axs[1,0].set_ylabel('Z ($\mu$m)')
+        #fig.suptitle("Profile of membranes after Cut")
+        #plt.show()
+        plt.tight_layout()
+        fig.savefig(PlotsBase+"Lines_ProfileCuts.pdf", bbox_inches='tight')
+        plt.close(fig)
+
+        refFold = FoldersNames[tifrefIndex]
+        image,resxy = MAIP.GetImageMatrix(os.path.join(THEBASE,refFold,refFold) + SUF_tiffile,GetTiffRes=True)
+        rgbimg = Image.fromarray(MAIP.ConvertToRGB(image,cmap='inferno'),mode="RGBA")
+        width, height = rgbimg.size
+
+        SCALEUP = 16
+
+        rgbimg = rgbimg.resize((width*SCALEUP,height*SCALEUP) )
+        width, height = rgbimg.size
 
 
-    # print(AllData[["Position","AVM_flat","PCN_flat","PCP_flat",'ZeroC1_flat','ZeroC2_flat']].sort_values("Position"))
+        Draw = ImageDraw.Draw(rgbimg)
+        font = ImageFont.truetype("ariblk.ttf", 10*SCALEUP)
+        for xval in Xcuts:
+            xval=xval*SCALEUP
+            xpix=int(xval*resxy[0])
+            Draw.line((xpix,0, xpix,height), fill='white',width=3*SCALEUP)
+            MAIP.drawTextWithOutline(Draw,(xpix+5*SCALEUP,2*SCALEUP),"X="+str(int(xval/SCALEUP))+" um",font,text_color='white',outl_width=1*SCALEUP,outl_color='black')
+        for yval in Ycuts:
+            yval=yval*SCALEUP
+            ypix=int(height-yval*resxy[0])
+            Draw.line((0,ypix, width,ypix), fill='white',width=3*SCALEUP)
+            MAIP.drawTextWithOutline(Draw,(5*SCALEUP,ypix+2*SCALEUP),"Y="+str(int(yval/SCALEUP))+" um",font,text_color='white',outl_width=1*SCALEUP,outl_color='black')
 
-    # Plot Angles with X
-    # fig, ax = plt.subplots(1,1,figsize=MAFP.HalfPage)
-    # ax.axhline(color="k",zorder=0)
-    # ax = swarm_plot_columns(AllData,"Position",["AVM_flat","PCN_flat","PCP_flat",'ZeroC1_flat','ZeroC2_flat'],"Angle","Angle in degrees",ax=ax,order=["Bottom","Left", "Center", "Right", "Top"])
-    # ax.set_title("Values of angles")
-    # plt.show()
+        MAIP.drawScalebar(Draw,barLength=200,scale=1/(resxy[0]*SCALEUP),font=font,imgsize=width,color='white',fill='white')
+        
+        MAIP.drawArrow(Draw,(20*SCALEUP,height-30*SCALEUP),(50*SCALEUP,0),scale=1.0,width=2*SCALEUP,color='white',tip="square",angle=30,dl=0.2)
+        MAIP.drawArrow(Draw,(30*SCALEUP,height-20*SCALEUP),(0,-50*SCALEUP),scale=1.0,width=2*SCALEUP,color='white',tip="square",angle=30,dl=0.2)
+        MAIP.drawTextWithOutline(Draw,(70*SCALEUP,height-30*SCALEUP),"X",font,text_color='white',outl_width=1*SCALEUP,outl_color='black')
+        MAIP.drawTextWithOutline(Draw,(32*SCALEUP,height-80*SCALEUP),"Y",font,text_color='white',outl_width=1*SCALEUP,outl_color='black')
 
+        SCALEDOWN=4/SCALEUP
+
+        rgbimg=rgbimg.resize((int(width*SCALEDOWN),int(height*SCALEDOWN)),Image.LANCZOS )
+        #rgbimg.show()
+        rgbimg.save(PlotsBase+"Figure_ProfileCuts.png","png")
+        
+    if "8" in MakePlots:    # Points example
+        # Generate Picture
+        for FOLD in FoldersNames:
+            Base = os.path.join(THEBASE,FOLD,FOLD)
+            plyFile_RT = Base + SUF_plyFile_RT
+            csvFile_PointsCombinedResults = Base + SUF_csvFile_PointsCombinedResults
+            Nodes,Elems = MAMIO.PLYIO(plyFile_RT).ExportMesh()
+            MyM = MAMIO.MyMesh(Nodes,Elems)
+
+            imgsize=2048
+            imgpixels,scale = MyM.MakePicture(resolution=(imgsize,imgsize))
+            Data = pd.read_csv(csvFile_PointsCombinedResults)
+            OutputName = Base + "_Positions.png"
+            MAIP.MarkPointsInArray(MAIP.ConvertToRGB(imgpixels,cmap="gray"),OutputName,Data,
+             radius = 40, fontSize=96, scale=scale,imgsize=imgsize,scalebarcolor='white',plotarrow=False)
+
+    if "9" in MakePlots:    # Box Relative Theta
+        MAFP.box_plot_figure(AllData,"Position",["Theta"],
+                column_labels=["Zero curvature direction ($\\theta$)"],
+                legend_title=None,
+                xlabel="Position of the point in the membrane",ylabel="Angle of zero curvature - $\\theta$ (deg)",
+                title="Angle of zero curvature across the Membrane",
+                savepath=PlotsBase+"Box_RelativeTheta.pdf",
+                )
+
+    if "A" in MakePlots:    # AllArrows
+        # Generate Picture
+        N=1
+        k=1
+        for FOLD_Img in FoldersNames:
+            print("Folder for Image:",FOLD_Img)
+            Base_Img = os.path.join(THEBASE,FOLD_Img,FOLD_Img)
+            pngFile_Streamlines = Base_Img + SUF_pngFile_Streamlines
+            pngFile_Streamlines_All = Base_Img + SUF_pngFile_Streamlines_WithAll
+            N+=1
+            k=1
+
+            for FOLD_Arr in FoldersNames:
+                print('   Folder for Arrows:',FOLD_Arr)
+                Base_Arr = os.path.join(THEBASE,FOLD_Arr,FOLD_Arr)
+                csvFile_PointsCombinedResults = Base_Arr + SUF_csvFile_PointsCombinedResults
+                Data = pd.read_csv(csvFile_PointsCombinedResults)
+                MAIP.MarkPointsInImage(pngFile_Streamlines,pngFile_Streamlines_All,Data,radius=10,offset=8,fontSize=48)
+                pngFile_Streamlines=pngFile_Streamlines_All
+                k+=1
+
+    if "B" in MakePlots:  # Y vs Absolute Fiber Angle
+        MAFP.regression_figure(AllData,"Y_T","AVM_flat",line45=False,
+            xlabel="Y coordinate of point ($\mu m$)",
+            ylabel="Absolute angle of fiber direction (deg)",
+            title= "Fiber direction as a function of Y.",
+            xlims=[200,1200],xstep=200,
+            ylims=[60,150],ystep=30,
+            savepath=PlotsBase+"Reg_YvsFiberAngle.pdf",
+            )
+
+    if "C" in MakePlots:  # Y vs Absolute ZC Angle
+        MAFP.regression_figure(AllData,"Y_T","ZeroC2_flat",line45=False,
+            xlabel="Y coordinate of point ($\mu m$)",
+            ylabel="Absolute angle of zero curvature direction (deg)",
+            title= "Zero Curvature direction as a function of Y.",
+            xlims=[200,1200],xstep=200,
+            ylims=[60,150],ystep=30,
+            savepath=PlotsBase+"Reg_YvsZCAngle.pdf",
+            )
+
+    if "D" in MakePlots:  # Y vs Absolute ZC Angle
+        MAFP.regression_figure(AllData,"Y_T","CircSTDV",line45=False,
+            xlabel="Y coordinate of point ($\mu m$)",
+            ylabel="Circular Standard Deviation (deg)",
+            title= "Dispersion as a function of Y.",
+            xlims=[200,1200],xstep=200,
+            ylims=[0,60],ystep=15,
+            savepath=PlotsBase+"Reg_YvsCSDEV.pdf",
+            )
+
+    if "E" in MakePlots: # Direction of max R
+
+        def ComputeRSqAng(Angle,Positions,FiberAngle,getDist=False):
+            ar=np.radians(Angle)   # Angle of Scan in radians
+            DirVec = np.array([np.cos(ar),np.sin(ar)]) # Direction of Scan
+            Dist = np.abs(np.dot(Positions,DirVec)) # Projection along direction
+            if getDist: return Dist
+            return sm.OLS(FiberAngle,sm.add_constant(Dist)).fit().rsquared # Compute Regression
+
+        Positions = np.array([AllData["X_T"],AllData["Y_T"]]).T
+        FiberAngle = AllData["AVM_flat"]
+
+        S=181
+        Angles=[step/(S-1)*180 for step in range(S)]
+        Rsquareds=[]
+        maxr=0
+        maxa=0
+        for Angle in Angles:
+            Rsq = ComputeRSqAng(Angle,Positions,FiberAngle)
+            Rsquareds.append(Rsq)
+            if Rsq>maxr:
+                maxr=Rsq
+                maxa=Angle
+
+        # Find Max Rsquared
+        delta=0.5
+        direc=1
+        while delta>0.00001:
+            maxa=maxa+direc*delta
+            newr = ComputeRSqAng(maxa,Positions,FiberAngle)
+            if newr<maxr:
+                direc=-direc
+                delta=delta/4
+            maxr=newr
+
+        MAFP.polar_figure(Angles,Rsquareds,[maxa,maxr],
+            savepath=PlotsBase+"Pol_RSqVsAngle.pdf",
+            xlabel="Angle",ylabel="$\qquad\qquad R^2$",
+            ylims=[0,1])
+
+        AllData["DirDist"]=ComputeRSqAng(maxa,Positions,FiberAngle,True)
+        MAFP.regression_figure(AllData,"DirDist","AVM_flat",line45=False,
+            xlabel="Distance along direction of maximum fit ($\mu m$)",
+            ylabel="Absolute angle of fiber direction (deg)",
+            title= "Fiber direction as a function of Distance along dir.",
+            xlims=[200,1200],xstep=200,
+            ylims=[60,150],ystep=30,
+            savepath=PlotsBase+"Reg_DvsFiberAngle.pdf",
+            )
+
+
+
+
+    CollectFigures=""
+
+    if "1" in CollectFigures:
+        DestFold="Streamlines"
+        SUFsToCollect = [SUF_pngFile_Streamlines_WithVM]
+        DestPath=os.path.join(PlotsBase,DestFold,"")
+        MATL.MakeNewDir(DestPath)
+        for FOLD in FoldersNames:
+            Base = os.path.join(THEBASE,FOLD,FOLD)
+            for fileSUF in SUFsToCollect:
+                filename = Base + fileSUF
+                shutil.copy2(filename,DestPath)
 
 
 
@@ -843,4 +1065,4 @@ def DO_EVERYTHING(FoldersNames,THEBASE,Force=False,tifrefIndex=0):
         ComputeStreamlines(Base,SmoothN=5,Force=Force)
 
     # Combine and Process Data
-    CombineAndProcessAllData(FoldersNames,THEBASE)
+    CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex)
