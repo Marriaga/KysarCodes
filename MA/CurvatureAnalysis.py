@@ -966,7 +966,7 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
             DirVec = np.array([np.cos(ar),np.sin(ar)]) # Direction of Scan
             Dist = np.abs(np.dot(Positions,DirVec)) # Projection along direction
             if getDist: return Dist
-            return sm.OLS(FiberAngle,sm.add_constant(Dist)).fit().rsquared # Compute Regression
+            return sm.OLS(FiberAngle,sm.add_constant(Dist)).fit().rsquared # Compute Regression  # pylint: disable=E1101
 
         Positions = np.array([AllData["X_T"],AllData["Y_T"]]).T
         FiberAngle = AllData["AVM_flat"]

@@ -217,7 +217,7 @@ def regression_figure(df,x,y,line45=True,xlabel=None,ylabel=None,title=None,save
     # Compute Linear Regression
     LinRegRes = smf.ols(y+" ~ "+x,df).fit()
     pvalue = tp.sci_notation(LinRegRes.pvalues[x],3)
-    rsquared = tp.std_notation(LinRegRes.rsquared,3)
+    rsquared = tp.std_notation(LinRegRes.rsquared,3) # pylint: disable=E1101
 
     # Place box with regression properties
     textstr = "p-value = " + pvalue + "\nR$^2$ = " + rsquared
