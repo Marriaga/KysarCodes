@@ -4,8 +4,49 @@ import matplotlib.ticker as ticker
 import seaborn as sns
 import statsmodels.formula.api as smf
 import itertools
+import numpy as np
+import copy
 
 import MA.to_precision as tp  # From https://bitbucket.org/william_rusnack/to-precision
+
+
+############## Begin hack for markers in swarm ##############
+from matplotlib.axes._axes import Axes
+import matplotlib.markers as mmarkers
+from seaborn import color_palette
+
+def GetColor2Marker(markers):
+    palette = color_palette()
+    mkcolors = [(palette[i]) for i in range(len(markers))]
+    return dict(zip(mkcolors,markers))
+
+def fixlegend(ax,markers,markersize=8,**kwargs):
+    _,l = ax.get_legend_handles_labels()
+    palette = color_palette()
+    mkcolors = [(palette[i]) for i in range(len(markers))]
+    newHandles = [plt.Line2D([0],[0], ls="none", marker=m, color=c, mec="none", markersize=markersize,**kwargs) \
+                for m,c in zip(markers, mkcolors)]
+    ax.legend(newHandles,l)
+
+old_scatter = Axes.scatter
+def new_scatter(self, *args, **kwargs):
+    colors = kwargs.get("c", None)
+    co2mk = kwargs.pop("co2mk",None)
+    FinalCollection = old_scatter(self, *args, **kwargs)
+    if co2mk is not None and isinstance(colors, np.ndarray):
+        Color2Marker = GetColor2Marker(co2mk)
+        paths=[]
+        for col in colors:
+            mk=Color2Marker[tuple(col)]
+            marker_obj = mmarkers.MarkerStyle(mk)
+            paths.append(marker_obj.get_path().transformed(
+                        marker_obj.get_transform()))
+        FinalCollection.set_paths(paths)
+    return FinalCollection
+Axes.scatter = new_scatter
+
+############## End hack. ##############
+
 
 
 def setupPaperStyle():
@@ -100,8 +141,15 @@ def swarm_plot_columns(df,categories_column,list_of_columns,legend_title,y_axis_
 
 ## Full figures
 
-def box_plot_figure(Data,categories_column,columns,column_labels=None,legend_title=" ",xlabel=None,ylabel=None,title=None,savepath=None,zeroline=False):
-    # Plot Principal Curvatures
+def box_plot_figure(Data,categories_column,columns,column_labels=None,
+    legend_title=" ",xlabel=None,ylabel=None,title=None,addHyperCyl=False,
+    savepath=None,zeroline=False,useSwarm=False,co2mk=None):
+    
+    showlegend=True
+    if legend_title is None:
+        legend_title=" "
+        showlegend=False
+
     newdf = Data[[categories_column] + columns].copy()
     if column_labels is None:
         column_labels = columns
@@ -109,19 +157,40 @@ def box_plot_figure(Data,categories_column,columns,column_labels=None,legend_tit
         newdf = newdf.rename(columns=dict(zip(columns, column_labels)))
 
     fig, ax = plt.subplots(1,1,figsize=HalfPage)
-    ax = box_plot_columns(newdf,categories_column,column_labels,legend_title,"Values",ax=ax,order=["Bottom","Left", "Center", "Right", "Top"])
+    if useSwarm:
+        if len(co2mk) != len(columns):
+            raise ValueError("co2mk must have the same length as the number of columns in the hue.")
+        ax = swarm_plot_columns(newdf,categories_column,column_labels,legend_title,"Values",ax=ax,order=["Bottom","Left", "Center", "Right", "Top"],co2mk=co2mk)
+    else:    
+        ax = box_plot_columns(newdf,categories_column,column_labels,legend_title,"Values",ax=ax,order=["Bottom","Left", "Center", "Right", "Top"])
 
-    # Fix Legend Title
+    # Fix Legend
+    legtitle =  ax.get_legend().get_title().get_text()
+    if useSwarm and co2mk is not None:
+        fixlegend(ax,co2mk)
+    
     leg = ax.get_legend()
+    leg.set_title(legtitle)
     leg._legend_box.align = "left"
     title_inst = leg.get_title()
     title_inst.set_fontweight('bold')
-
+    if not showlegend:
+        leg.remove()
 
     if zeroline: ax.axhline(color="k",zorder=0)
     if xlabel is not None: ax.set_xlabel(xlabel)
     if ylabel is not None: ax.set_ylabel(ylabel)
     if title is not None: ax.set_title(title)
+
+    if addHyperCyl:
+        arrowprops = dict(arrowstyle='<->',linewidth=4,mutation_scale=25)
+        
+        ax.annotate("", (0.05,0.5), xytext=(0.55,0.5),  xycoords =ax.transAxes,arrowprops=arrowprops)
+        ax.text(0.3, 0.6, "Hyperbolic Type", transform=ax.transAxes, fontsize=14, va="top", ha="center")
+
+        ax.annotate("", (0.65,0.8), xytext=(0.95,0.8),  xycoords =ax.transAxes,arrowprops=arrowprops)
+        ax.text(0.8, 0.9, "Cylindrical Type", transform=ax.transAxes, fontsize=14, va="top", ha="center")
+
 
     if savepath is None:
         plt.show()
@@ -131,14 +200,14 @@ def box_plot_figure(Data,categories_column,columns,column_labels=None,legend_tit
 
 
 
-def regression_figure(df,x,y,line45=True,xlabel=None,ylabel=None,title=None,savepath=None):
+def regression_figure(df,x,y,line45=True,xlabel=None,ylabel=None,title=None,savepath=None,xlims=[0,45],ylims=[0,60],xstep=15,ystep=15):
     # Open Figure
     fig, ax = plt.subplots(1,1,figsize=HalfPage)
     ax = sns.scatterplot(x=x, y=y, data=df,hue="Position",style="Position",ax=ax,markers=MKS)
-    setxaxis(ax,x,[0,45],15)
-    setyaxis(ax,y,[0,60],15)
+    setxaxis(ax,x,xlims,xstep)
+    setyaxis(ax,y,ylims,ystep)
     if line45: ax.plot([0,45],[0,45],color="k")
-    ax = sns.regplot(x=x, y=y, data=df, truncate=False, scatter=False,ax=ax)
+    ax = sns.regplot(x=x, y=y, data=df, truncate=False, scatter=False,ax=ax,line_kws={"linestyle":"--"})
 
     # Improve Labels
     if xlabel is not None: ax.set_xlabel(xlabel)
@@ -162,6 +231,29 @@ def regression_figure(df,x,y,line45=True,xlabel=None,ylabel=None,title=None,save
     title_inst = leg.get_title()
     title_inst.set_fontweight('bold')
 
+    if savepath is None:
+        plt.show()
+    else:
+        fig.savefig(savepath, bbox_inches='tight')
+    plt.close(fig)
+
+
+
+def polar_figure(Angles,Values,ScatterPoints=None,xlabel=None,ylabel=None,title=None,savepath=None,xlims=[0,np.pi],ylims=None,xstep=np.pi/8,ystep=None):
+
+    # Figure with angle of Max RSquared
+    fig, ax = plt.subplots(1,1,subplot_kw={"projection":"polar"})
+    ax.plot(np.radians(Angles),Values,lw=2.0)
+    ax.scatter(np.radians([ScatterPoints[0]]),[ScatterPoints[1]],color='r',zorder=3)
+    setxaxis(ax,ylabel,xlims,xstep)
+    setyaxis(ax,xlabel,ylims,ystep)
+    if title is not None: ax.set_title(title)
+    #if xlabel is not None: ax.set_ylabel(xlabel, labelpad=30)
+    ax.xaxis.set_label_coords(0.75, 0.18)
+
+    #if ylabel is not None: ax.set_xlabel(ylabel, labelpad=-50)
+    ax.yaxis.set_label_coords(-0.1, 0.5)
+    
     if savepath is None:
         plt.show()
     else:
