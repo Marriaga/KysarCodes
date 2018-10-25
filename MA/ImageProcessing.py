@@ -30,8 +30,6 @@ def FlipImage(NameIn,NameOut):
     else: 
         FlippedImage.save(NameOut)
 
-
-
 ### Note on image matrix formats ###
 # Consider an image given by:
 #   00 10 20
@@ -249,7 +247,7 @@ def ConvertToRGB(MpixO,cmap=None,markzero=False,nf=0.001,N=1024,RGBPoints=None):
     if RGBPoints is not None: #Overides cmap
         cmap = Getcmap(RGBPoints=RGBPoints,N=N)
         
-    if cmap is None: cmap='jet'
+    if cmap is None: cmap='inferno'
         
     if type(cmap)==type(' '):
         cmap = Getcmap(Name=cmap,N=N)
@@ -843,7 +841,7 @@ def draw_ellipse(image, bounds, width=3, outline='white', antialias=2):
     # paste outline color to input image through the mask
     image.paste(outline, mask=mask)
 
-def drawArrow(Draw,xyi,vec,scale=100,width=0.13,color='black',tip="rounded"):
+def drawArrow(Draw,xyi,vec,scale=100,width=0.13,color='black',tip="rounded",angle=45,dl=0.33):
     ''' Draw an arrow given an origin point and a vector direction'''
     xyi=np.array(xyi)
     vec=np.array(vec)
@@ -852,9 +850,8 @@ def drawArrow(Draw,xyi,vec,scale=100,width=0.13,color='black',tip="rounded"):
     c=vec[0]/L
     RM=np.array([[c,-s],[s,c]])
 
-    angle=45
     sa,ca = np.sin(np.radians(angle)),np.cos(np.radians(angle))
-    dl=1/3
+
 
     P0_R = np.array([0,0])
     P1_R = np.array([1,0])
@@ -903,50 +900,69 @@ def drawTextWithOutline(Draw,xy,text,font,text_color='white',outl_width=3,outl_c
     
     Draw.text((x, y),text,text_color,font=font)
 
-def drawScalebar(Draw,barLength=200,scale=1.0,font=None):
+def drawScalebar(Draw,barLength=200,scale=1.0,font=None,imgsize=2048,color='black',fill=(20,20,20)):
     ''' Draw Scale bar.
 
         barLength - Length in world coordinates'''
     
-    cornerdist = int(0.93*2048)
+    cornerdist = int(0.93*imgsize)
     scalebartext = str(barLength)+" microns"
     scalebar = int(barLength/scale)
 
+    if color == 'white':
+        fill = (220,220,220)
+
     xtext,ytext = Draw.textsize(scalebartext,font=font)
-    Draw.rectangle([cornerdist-scalebar,cornerdist,cornerdist,cornerdist-scalebar/10],fill=(20,20,20),outline='black')
-    Draw.text((cornerdist-scalebar/2-xtext/2, cornerdist+ytext/10),scalebartext,'black',font=font)
+    Draw.rectangle([cornerdist-scalebar,cornerdist,cornerdist,cornerdist-scalebar/10],fill=fill,outline=color)
+    Draw.text((cornerdist-scalebar/2-xtext/2, cornerdist+ytext/10),scalebartext,color,font=font)
 
 
-def MarkPointsInImage(ImageName,OutputName,Data,radius=10,offset=8,fontSize=48):
+def _MarkPointsInPILImage(BImg,OutputName,Data,radius=10,offset=8,fontSize=48,scale=1400/2048.0,imgsize=2048,scalebarcolor='black',plotarrow=True):
     ColSequence = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33','#a65628','#f781bf','#999999'] #http://colorbrewer2.org
-    BImg = Image.open(ImageName)
     Draw = ImageDraw.Draw(BImg)
+    dimscale = imgsize/2048
+    fontSize=int(fontSize*dimscale)
     font = ImageFont.truetype("ariblk.ttf", fontSize)
+    radius*=dimscale
+    offset*=dimscale
+    #scale = 1400/2048.0 #microns/pixel
 
-    scale = 1400/2048.0 #microns/pixel
+    colordict = {"Left":ColSequence[0],
+                 "Right":ColSequence[1],
+                 "Center":ColSequence[2],
+                 "Bottom":ColSequence[3],
+                 "Top":ColSequence[4],
+                 "Bottom_Right":ColSequence[5]}
 
     for index, row in Data.iterrows():
         x_raw,y_raw= row["X_T"],row["Y_T"]
         label = row["Position"]
+        color = colordict[label] #ColSequence[index]
         avm = np.radians(row["AVM_flat"])
-        x,y = x_raw/scale,2048-y_raw/scale
+        x,y = x_raw/scale,imgsize-y_raw/scale
       
         #print("Draw Arrows")
-        drawArrow(Draw,(x,y),(np.cos(avm),-np.sin(avm)))  
+        if plotarrow:  drawArrow(Draw,(x,y),(np.cos(avm),-np.sin(avm)),scale=100*dimscale,width=0.13*dimscale)  
         #print("Make Ellipse")
-        Draw.ellipse((x-radius+1, y-radius+1, x+radius, y+radius), fill=ColSequence[index])
+        Draw.ellipse((x-radius+1, y-radius+1, x+radius, y+radius), fill=color)
         draw_ellipse(BImg,(x-radius+1, y-radius+1, x+radius, y+radius), outline='black')
         #print("Draw Text")
-        drawTextWithOutline(Draw,(x+offset,y+offset),label,font,text_color=ColSequence[index])
+        drawTextWithOutline(Draw,(x+offset,y+offset),label,font,text_color=color)
 
     #print("Draw Scalebar")
     scalebarfont = ImageFont.truetype("ariblk.ttf", int(fontSize*0.8))
-    drawScalebar(Draw,barLength=200,scale=scale,font=scalebarfont)
+    drawScalebar(Draw,barLength=200,scale=scale,font=scalebarfont,imgsize=imgsize,color=scalebarcolor)
 
     BImg.save(OutputName)
 
+def MarkPointsInArray(Array,OutputName,Data,**kwargs):
+    #BImg = Image.fromarray(np.float32(Array),mode="F").convert("RGBA")
+    BImg = Image.fromarray(Array,mode="RGBA")
+    _MarkPointsInPILImage(BImg,OutputName,Data,**kwargs)
 
-
+def MarkPointsInImage(ImageName,OutputName,Data,**kwargs):
+    BImg = Image.open(ImageName)
+    _MarkPointsInPILImage(BImg,OutputName,Data,**kwargs)
 
 
 
