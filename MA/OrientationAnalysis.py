@@ -856,18 +856,18 @@ class Fitting(object):
                        [ 4,     0.146,	0.176,	0.202,	0.233,	0.252 ],
                        [ 5,     0.148,	0.177,	0.205,	0.238,	0.262 ],
                        [ 6,     0.149,	0.179,	0.208,	0.243,	0.269 ],
-                       [ 7, 	0.149,	0.180,   0.210,	0.247,	0.274 ],
-                       [ 8, 	0.150,	0.181,	0.211,	0.250,	0.278 ],
+                       [ 7,     	0.149,	0.180,  0.210,	0.247,	0.274 ],
+                       [ 8, 	    0.150,	0.181,	0.211,	0.250,	0.278 ],
                        [ 9,     0.150,	0.182,	0.212,	0.252,	0.281 ],
-                       [ 10,	0.150,	0.182,	0.213,	0.254,	0.283 ],
-                       [ 12,	0.150,	0.183,	0.215,	0.256,	0.287 ],
-                       [ 14,	0.151,	0.184,	0.216,	0.258,	0.290 ],
-                       [ 16,	0.151,	0.184,	0.216,	0.259,	0.291 ],
-                       [ 18,	0.151,	0.184,	0.217,	0.259,	0.292 ],
-                       [ 20,	0.151,	0.185,	0.217,	0.261,	0.293 ],
-                       [ 30,	0.152,	0.185,	0.219,	0.263,	0.296 ],
-                       [ 40,	0.152,	0.186,	0.219,	0.264,	0.298 ],
-                       [ 50,	0.152,	0.186,	0.220,	0.265,	0.299 ],
+                       [ 10,	    0.150,	0.182,	0.213,	0.254,	0.283 ],
+                       [ 12,	    0.150,	0.183,	0.215,	0.256,	0.287 ],
+                       [ 14,    	0.151,	0.184,	0.216,	0.258,	0.290 ],
+                       [ 16,    	0.151,	0.184,	0.216,	0.259,	0.291 ],
+                       [ 18,    	0.151,	0.184,	0.217,	0.259,	0.292 ],
+                       [ 20,	    0.151,	0.185,	0.217,	0.261,	0.293 ],
+                       [ 30,    	0.152,	0.185,	0.219,	0.263,	0.296 ],
+                       [ 40,    	0.152,	0.186,	0.219,	0.264,	0.298 ],
+                       [ 50,	    0.152,	0.186,	0.220,	0.265,	0.299 ],
                        [ 100,	0.152,	0.186,	0.221,	0.266,	0.301 ] ])
 
         # compute the critical value, by linear interpolation: 
@@ -1206,6 +1206,37 @@ class Fitting(object):
             
         return p_X
     
+    # ---------------------------------------------------------------------- #
+    def Uniformity_test( self ):
+        '''
+        Assesement of Uniformity of Raw data:
+            using a uniform probability plot:
+                plot the sorted observations theta_i/pi against i(n+1)
+                If the data come from a uniform distribution, then the points
+                should lie near a straight line of unit slope passing through 
+                the origin.
+            The function also returns the R2 "coefficient of determination" 
+                for that fit: the closer to unity the more uniform the data.
+        '''
+        # get the observed data: 
+        pX = ( self.makePoints() + np.pi/2 )/np.pi
+        n = len(pX)
+        h = np.arange(1/(n+1), n/(n+1), 1/(n+1))
+        fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+        ax.plot(h, pX[1::], color='r', linestyle=':', label='data')
+        #ax.plot([0, 1], [0, 1], color='g', linestyle='--', label='45$^o$ line')
+        ax.plot(h, h, color='g', linestyle='--', label='45$^o$ line')
+        ax.square()
+        ax.legend()
+        
+        # compute the R2 coefficient of determination: 
+        SSE = sum((h - pX[1::])**2)
+        SSTO = sum((h - np.mean(h))**2)
+        R2 = 1 - SSE/SSTO
+        ax.annotate('$R^2=%s$' % R2, xy=(0.4,1.0), xytext=(0.4, 1.0) )
+        
+        return R2
+
     # ---------------------------------------------------------------------- #
     def ECDF( self, data ):
         """
