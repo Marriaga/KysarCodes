@@ -740,7 +740,7 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
     AllData["Outlier"]=[p=="Bottom" and kmax<0 for p,kmax in zip(AllData["Position"],AllData["KMax"])]
     AllData=AllData[np.logical_not(AllData["Outlier"])] #Remove outlier
     
-    MakePlots = "E"
+    MakePlots = ""
     
     if "1" in MakePlots:    # Plot Fiber Direction vs Theta
         MAFP.regression_figure(AllData,"Theta","AVM",
@@ -949,7 +949,7 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
             savepath=PlotsBase+"Reg_YvsZCAngle.pdf",
             )
 
-    if "D" in MakePlots:  # Y vs Absolute ZC Angle
+    if "D" in MakePlots:  # Y vs CSDEV
         MAFP.regression_figure(AllData,"Y_T","CircSTDV",line45=False,
             xlabel="Y coordinate of point ($\mu m$)",
             ylabel="Circular Standard Deviation (deg)",
