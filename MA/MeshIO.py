@@ -660,6 +660,17 @@ class FEBioIO(BaseIO):
     
     ## -- WRITE FEBIO OPERATIONS -- ##
 
+    # Aux operations
+    def createChild(self,parent,child):
+        childobjg = self.doc.createElement(child)
+        parent.appendChild(childobjg)
+        return childobjg
+
+    def addText(self,parent,text):
+        textobj = self.doc.createTextNode(text)
+        parent.appendChild(textobj)
+        return textobj
+
     def addObjectsAsChildren(self,pobject,pdict):
         for key in pdict:
             keyobj = self.doc.createElement(key)
@@ -667,179 +678,179 @@ class FEBioIO(BaseIO):
             keyobj.appendChild(valtxtobj)
             pobject.appendChild(keyobj)
 
+    # Add Parts to feb File
 
-    def SaveFile(self,febiofile,Endi=None):
-        if Endi is not None:
-            self.Endi = Endi
-        if self.Endi == "=":
-            self.Endi=SYS_ENDI
-        self.NormEndi()
-    
-        # Root element
-        self.doc = xml.dom.minidom.Document()
-        self.febio_spec = self.doc.createElement("febio_spec")
-        self.febio_spec.setAttribute("version", "2.5")
-        self.doc.appendChild(self.febio_spec)
-
+    def addBeginning(self):
         # Module
-        self.Module = self.doc.createElement("Module")
-        self.Module.setAttribute("type", "solid")
-        self.febio_spec.appendChild(self.Module)
+        Module = self.createChild(self.febio_spec,"Module")
+        Module.setAttribute("type", "solid")
 
         # Globals
-        self.Globals = self.doc.createElement("Globals")
-        self.febio_spec.appendChild(self.Globals)
-        self.Constants = self.doc.createElement("Constants")
-        self.addObjectsAsChildren(self.Constants,{"T":"0","R":"0","Fc":"0"})
-        self.Globals.appendChild(self.Constants)
+        Globals = self.createChild(self.febio_spec,"Globals")
+        Constants = self.createChild(Globals,"Constants")
+        self.addObjectsAsChildren(Constants,{"T":"0","R":"0","Fc":"0"})
 
-
+    def addMaterial(self):
         # Material
-        self.Material = self.doc.createElement("Material")
-        self.febio_spec.appendChild(self.Material)
-        
+        Material = self.createChild(self.febio_spec,"Material")
 
         # material 1
-        self.material1 = self.doc.createElement("material")
-        self.material1.setAttribute("id", "1")
-        self.material1.setAttribute("name", "Material1")
-        self.material1.setAttribute("type", "uncoupled solid mixture")
-        self.Material.appendChild(self.material1)
+        material1 = self.createChild(Material,"material")
+        material1.setAttribute("id", "1")
+        material1.setAttribute("name", "Material1")
+        material1.setAttribute("type", "uncoupled solid mixture")
 
         # solid NH
-        self.solidnh = self.doc.createElement("solid")
-        self.solidnh.setAttribute("type", "Mooney-Rivlin")
-        self.addObjectsAsChildren(self.solidnh,{"c1":"0.08","c2":"0.0","k":"1000"}) #E=2MPa => G=0.66uN/um2 => c1=0.33
-        self.material1.appendChild(self.solidnh)
+        solidnh = self.createChild(material1,"solid")
+        solidnh.setAttribute("type", "Mooney-Rivlin")
+        self.addObjectsAsChildren(solidnh,{"c1":"0.08","c2":"0.0","k":"1000"}) #E=2MPa => G=0.66uN/um2 => c1=0.33
 
         # solid fiber
-        self.solidf = self.doc.createElement("solid")
-        self.solidf.setAttribute("type", "fiber-exp-pow-uncoupled")
-        self.addObjectsAsChildren(self.solidf,{"ksi":"0.08","alpha":"200","beta":"2.0","theta":"0.0","phi":"90.0"})
-        self.material1.appendChild(self.solidf)
-				
+        solidf = self.createChild(material1,"solid")
+        solidf.setAttribute("type", "fiber-exp-pow-uncoupled")
+        self.addObjectsAsChildren(solidf,{"ksi":"0.08","alpha":"200","beta":"2.0","theta":"0.0","phi":"90.0"})
 
+    def addGeometry(self):
         # Geometry
-        self.geometry = self.doc.createElement("Geometry")
-        self.febio_spec.appendChild(self.geometry)
+        Geometry = self.createChild(self.febio_spec,"Geometry")
 
         #Nodes
-        nodes = self.doc.createElement("Nodes")
-        nodes.setAttribute("name","Object01")
-        self.geometry.appendChild(nodes)
-
+        Nodes = self.createChild(Geometry,"Nodes")
+        Nodes.setAttribute("name","Object01")
         for nd in range(len(self.Nodes.Mat)):
-            node_coords = self.doc.createElement("node")
+            node_coords = self.createChild(Nodes,"node")
             node_coords.setAttribute("id",str(nd+1))
-            nodes.appendChild(node_coords)
-
             string=",".join([str(self.Nodes.Mat[nd][lab]) for lab in ["x","y","z"]])
-            node_coords_data = self.doc.createTextNode(string)
-            node_coords.appendChild(node_coords_data)
+            self.addText(node_coords,string)
 
         #Elements
-        elements = self.doc.createElement("Elements")
-        elements.setAttribute("type","tri3")
-        elements.setAttribute("name","Part1")
-        elements.setAttribute("mat","1")
-        self.geometry.appendChild(elements)
-
+        Elements = self.createChild(Geometry,"Elements")
+        Elements.setAttribute("type","tri3")
+        Elements.setAttribute("name","Part1")
+        Elements.setAttribute("mat","1")
         for el in range(len(self.Elems.Mat)):
-            elem_nodes = self.doc.createElement("elem")
+            elem_nodes = self.createChild(Elements,"elem")
             elem_nodes.setAttribute("id",str(el+1))
-            elements.appendChild(elem_nodes)
-
             string=",".join([str(self.Elems.Mat[el][lab]+1) for lab in ["p1","p2","p3"]])
-            elem_nodes_data = self.doc.createTextNode(string)
-            elem_nodes.appendChild(elem_nodes_data)
+            self.addText(elem_nodes,string)
 
         #NodeSet 
-        NodeSet = self.doc.createElement("NodeSet")
+        NodeSet = self.createChild(Geometry,"NodeSet")
         NodeSet.setAttribute("name","FixedDisplacement1")
-        self.geometry.appendChild(NodeSet)
-
         for nd in range(len(self.Nodes.Mat)):
             if self.MeshClass.NIsB[nd]:
-                node = self.doc.createElement("node")
+                node = self.createChild(NodeSet,"node")
                 node.setAttribute("id",str(nd+1))
-                NodeSet.appendChild(node)
 
         #Surface
-        Surface = self.doc.createElement("Surface")
+        Surface = self.createChild(Geometry,"Surface")
         Surface.setAttribute("name","PressureLoad1")
-        self.geometry.appendChild(Surface)
-
         for el in range(len(self.Elems.Mat)):
-            elem_nodes = self.doc.createElement("tri3")
+            elem_nodes = self.createChild(Surface,"tri3")
             elem_nodes.setAttribute("id",str(el+1))
-            Surface.appendChild(elem_nodes)
-
             string=",".join([str(self.Elems.Mat[el][lab]+1) for lab in ["p1","p2","p3"]])
-            elem_nodes_data = self.doc.createTextNode(string)
-            elem_nodes.appendChild(elem_nodes_data)
+            self.addText(elem_nodes,string)
 
-
-
+    def addMeshData(self,thickness=30.0,fibertype=0,linfuncparam=(-0.0835,156.738)):
+        '''thickness default = 30 um
+        fibertype default = 0
+            0- aligned with X (like 3 with a,b=0)
+            1- random
+            2- direction of zero curvature
+            3- linear function (linfuncparam = [a,b] angle = a*y_coord+b)
+        '''
+        
         # MeshData
-        self.meshdata = self.doc.createElement("MeshData")
-        self.febio_spec.appendChild(self.meshdata)
+        MeshData = self.createChild(self.febio_spec,"MeshData")
 
         #ElementData - shell thickness
-        elementdata = self.doc.createElement("ElementData")
-        elementdata.setAttribute("var","shell thickness")
-        elementdata.setAttribute("elem_set","Part1")
-        self.meshdata.appendChild(elementdata)
-
+        ElementData = self.createChild(MeshData,"ElementData")
+        ElementData.setAttribute("var","shell thickness")
+        ElementData.setAttribute("elem_set","Part1")
         for el in range(len(self.Elems.Mat)):
-            elem_thick = self.doc.createElement("elem")
+            elem_thick = self.createChild(ElementData,"elem")
             elem_thick.setAttribute("lid",str(el+1))
-            elementdata.appendChild(elem_thick)
-
-            elem_thick_data = self.doc.createTextNode("30.0,30.0,30.0")
-            elem_thick.appendChild(elem_thick_data)
+            self.addText(elem_thick,str(thickness)+","+str(thickness)+","+str(thickness))
 
 
-        #ElementData - mat_axis
-        elementdata = self.doc.createElement("ElementData")
-        elementdata.setAttribute("var","mat_axis")
-        elementdata.setAttribute("elem_set","Part1")
-        self.meshdata.appendChild(elementdata)
+        #ElementData - mat_axis (Fiber Orientation)
+        ElementData = self.createChild(MeshData,"ElementData")
+        ElementData.setAttribute("var","mat_axis")
+        ElementData.setAttribute("elem_set","Part1")
 
+        self.MeshClass.ComputeNormals()
+        if fibertype==2:
+            self.MeshClass.ComputeCurvatures()
+            Director_Vector_List = [
+                [[551,1204,707],[0.55,-0.17,0.82]],
+                [[767,1015,759],[0.07,0.75,0.65]],
+                [[995,1094,740],[-0.43,0.57,0.7]],
+                [[407,943,402],[0.78,-0.53,0.32]],
+                [[778,689,463],[0.41,0.66,0.63]],
+                [[1066,709,442],[-0.02,0.85,0.52]],
+                [[373,442,154],[0.8,-0.6,0.08]],
+                [[708,239,206],[0.64,0.66,0.38]],
+                [[965,313,263],[0.27,0.9,0.35]],
+            ]
+            Aux_Vec = [-0.15,0.88,0.45]            
+            self.MeshClass.ReadjustMinCurvDirections(Director_Vector_List=Director_Vector_List)
+            self.MeshClass.FlipMinCurvDirections(Aux_Director_Vector=Aux_Vec)
+
+        a,b=linfuncparam
         for el in range(len(self.Elems.Mat)):
-            elem_mat_axis = self.doc.createElement("elem")
+            elem_mat_axis = self.createChild(ElementData,"elem")
             elem_mat_axis.setAttribute("lid",str(el+1))
-            elementdata.appendChild(elem_mat_axis)
 
-            elem_mat_axis_a = self.doc.createElement("a")
-            elem_mat_axis_a.appendChild(self.doc.createTextNode("1,0,0"))
-            elem_mat_axis.appendChild(elem_mat_axis_a)
+            elem_mat_axis_a = self.createChild(elem_mat_axis,"a")
+            elem_mat_axis_d = self.createChild(elem_mat_axis,"d")
 
-            elem_mat_axis_d = self.doc.createElement("d")
-            elem_mat_axis_d.appendChild(self.doc.createTextNode("0,1,0"))
-            elem_mat_axis.appendChild(elem_mat_axis_d)
+            if fibertype==0: # Aligned with X,Y
+                angle=0
+            elif fibertype==1: # Random
+                angle=np.random.random()*180
+            elif fibertype==2: # Dir Zero Curv
+                Vmm=np.array([0,0,0])
+                for ni in self.MeshClass.EN[el]:
+                    Vmm+=self.MeshClass.NMinMag[ni]
+                angle = np.degrees(np.arctan2(Vmm[1],Vmm[0]))
+                if angle<0: angle+=360
+                if angle>180: angle-=180
+            elif fibertype==3: # Linear function
+                y_coord = 0
+                for ni in self.MeshClass.EN[el]:
+                    y_coord+=self.Nodes.NodesMat[ni]["y"]
+                y_coord/=3.0
+                angle = y_coord*a+b
+
+            normal = self.MeshClass.ENorms[el]
+            V=np.array([np.cos(np.radians(angle)), np.sin(np.radians(angle)), 0])
+            nz = np.array([0,0,1])
+            avec = V-np.dot(V,normal)/np.dot(nz,normal)*nz
+            avec/=np.linalg.norm(avec)
+
+            dvec=np.cross(normal,avec)
+            self.addText(elem_mat_axis_a,",".join([str(x) for x in avec]))
+            self.addText(elem_mat_axis_d,",".join([str(x) for x in dvec]))
 
 
+    def addBoundary(self):
         # Boundary
-        self.Boundary = self.doc.createElement("Boundary")
-        self.febio_spec.appendChild(self.Boundary)
-        fixedbc=self.doc.createElement("fix")
+        Boundary = self.createChild(self.febio_spec,"Boundary")
+        fixedbc = self.createChild(Boundary,"fix")
         fixedbc.setAttribute("bc","x,y,z")
-        fixedbc.setAttribute("node_set","FixedDisplacement1")
-        self.Boundary.appendChild(fixedbc)
-        
-        
-        # LoadData
-        self.LoadData = self.doc.createElement("LoadData")
-        self.febio_spec.appendChild(self.LoadData)
+        fixedbc.setAttribute("node_set","FixedDisplacement1")        
 
-        loadcurve1=self.doc.createElement("loadcurve")
+    def addLoadData(self):
+        # LoadData
+        LoadData = self.createChild(self.febio_spec,"LoadData")
+        
+        loadcurve1 = self.createChild(LoadData,"loadcurve")
         loadcurve1.setAttribute("id","1")
         loadcurve1.setAttribute("type","smooth")
         self.addObjectsAsChildren(loadcurve1,{"point":"0,0"})
         self.addObjectsAsChildren(loadcurve1,{"point":"1,1"})
-        self.LoadData.appendChild(loadcurve1)
 
-        loadcurve2=self.doc.createElement("loadcurve")
+        loadcurve2 = self.createChild(LoadData,"loadcurve")
         loadcurve2.setAttribute("id","2")
         loadcurve2.setAttribute("type","step")
         for i in range(11):
@@ -848,27 +859,26 @@ class FEBioIO(BaseIO):
                 self.addObjectsAsChildren(loadcurve2,{"point":"0,0"})
             else:
                 self.addObjectsAsChildren(loadcurve2,{"point":str(f)+",0.1"})
-        self.LoadData.appendChild(loadcurve2)
 
-        
+    def addOutput(self):
         # Output
-        self.Output = self.doc.createElement("Output")
-        self.febio_spec.appendChild(self.Output)
-        plotfile=self.doc.createElement("plotfile")
+        Output = self.createChild(self.febio_spec,"Output")
+        plotfile = self.createChild(Output,"plotfile")
         plotfile.setAttribute("type","febio")
+        
         for outdata in ["displacement","stress","Lagrange strain"]:
-            var = self.doc.createElement("var")
+            var = self.createChild(plotfile,"var")
             var.setAttribute("type",outdata)
-            plotfile.appendChild(var)
-        self.Output.appendChild(plotfile)
 
+    def addStep(self,load=2E-3): 
+        'Default load = 2E-3 = 2MPa'
         # Step1
-        self.Step1 = self.doc.createElement("Step")
-        self.Step1.setAttribute("name","Step1")
-        self.febio_spec.appendChild(self.Step1)
+        Step1 = self.createChild(self.febio_spec,"Step")
+        Step1.setAttribute("name","Step1")
 
         #Control
-        Control = self.doc.createElement("Control")
+        Control = self.createChild(Step1,"Control")
+
         StepParam = {
             "time_steps":"100",
             "step_size":"0.01",
@@ -885,49 +895,57 @@ class FEBioIO(BaseIO):
             "qnmethod":"0"}
         self.addObjectsAsChildren(Control,StepParam)
 
-        time_stepper = self.doc.createElement("time_stepper")
+        time_stepper = self.createChild(Control,"time_stepper")
         self.addObjectsAsChildren(time_stepper,{"dtmin":"0.00001"})
-
-        dtmax=self.doc.createElement("dtmax")
-        #dtmax.setAttribute("lc","2")
-        valtxtobj = self.doc.createTextNode("0.2")
-        dtmax.appendChild(valtxtobj)
-        time_stepper.appendChild(dtmax)
-
+        dtmax = self.createChild(time_stepper,"dtmax")
+        dtmax.setAttribute("lc","2")
+        self.addText(dtmax,"0.2")
         TimeParam = {
             "max_retries":"10",
             "opt_iter":"10",
             "aggressiveness":"1"}
         self.addObjectsAsChildren(time_stepper,TimeParam)
-        Control.appendChild(time_stepper)
 
-        analysis = self.doc.createElement("analysis")
+        analysis = self.createChild(Control,"analysis")
         analysis.setAttribute("type","static")
-        Control.appendChild(analysis)
-        self.Step1.appendChild(Control)
+
 
         #Loads
-        Loads = self.doc.createElement("Loads")
-        self.Step1.appendChild(Loads)
+        Loads = self.createChild(Step1,"Loads")
 
-        surface_load = self.doc.createElement("surface_load")
+        surface_load = self.createChild(Loads,"surface_load")
         surface_load.setAttribute("type","pressure")
         surface_load.setAttribute("surface","PressureLoad1")
-        Loads.appendChild(surface_load)
 
-
-        pressure = self.doc.createElement("pressure")
+        pressure = self.createChild(surface_load,"pressure")
         pressure.setAttribute("lc","1")
-        valtxtobj = self.doc.createTextNode("2e-3")
-        pressure.appendChild(valtxtobj)
-        surface_load.appendChild(pressure)
+        self.addText(pressure,str(load)) #2MPa
 
-        linear = self.doc.createElement("linear")
-        valtxtobj = self.doc.createTextNode("0")
-        linear.appendChild(valtxtobj)
-        surface_load.appendChild(linear)
+        linear = self.createChild(surface_load,"linear")
+        self.addText(linear,"0")
+      
 
-        
+    def SaveFile(self,febiofile,Endi=None,):
+        if Endi is not None:
+            self.Endi = Endi
+        if self.Endi == "=":
+            self.Endi=SYS_ENDI
+        self.NormEndi()
+    
+        # Root element
+        self.doc = xml.dom.minidom.Document()
+        self.febio_spec = self.createChild(self.doc,"febio_spec")
+        self.febio_spec.setAttribute("version", "2.5")
+
+        self.addBeginning()
+        self.addMaterial()
+        self.addGeometry()
+        self.addMeshData()
+        self.addBoundary()
+        self.addLoadData()
+        self.addOutput()
+        self.addStep(load=2E-3)
+
         with open(febiofile, 'w') as fp:
             self.doc.writexml(fp, addindent="    ", newl='\n')
     
