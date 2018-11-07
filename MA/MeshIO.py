@@ -678,6 +678,69 @@ class FEBioIO(BaseIO):
             keyobj.appendChild(valtxtobj)
             pobject.appendChild(keyobj)
 
+    # Aux Functions
+
+    def processdata(self,fibertype=0,**kwargs):
+        self.MeshClass.ComputeNormals()
+        if fibertype==2:
+            self.MeshClass.ComputeCurvatures()
+            self.MeshClass.SmoothCurvatures(5)
+            self.MeshClass.ComputeCurvaturePrincipalDirections()
+            Director_Vector_List = [
+                [[551,1204,707],[0.55,-0.17,0.82]],
+                [[767,1015,759],[0.07,0.75,0.65]],
+                [[995,1094,740],[-0.43,0.57,0.7]],
+                [[407,943,402],[0.78,-0.53,0.32]],
+                [[778,689,463],[0.41,0.66,0.63]],
+                [[1066,709,442],[-0.02,0.85,0.52]],
+                [[373,442,154],[0.8,-0.6,0.08]],
+                [[708,239,206],[0.64,0.66,0.38]],
+                [[965,313,263],[0.27,0.9,0.35]],
+            ]
+            Aux_Vec = [-0.15,0.88,0.45]            
+            self.MeshClass.ReadjustMinCurvDirections(Director_Vector_List=Director_Vector_List)
+            self.MeshClass.FlipMinCurvDirections(Aux_Director_Vector=Aux_Vec)
+
+        self.makefiberangles(fibertype=fibertype,**kwargs)
+
+    def makefiberangles(self,fibertype=0,linfuncparam=(-0.0835,156.738)):
+        '''Compute angle of fibers for each element.
+        fibertype default = 0
+            0- aligned with X (like 3 with a,b=0)
+            1- random
+            2- direction of zero curvature
+            3- linear function (linfuncparam = [a,b] angle = a*y_coord+b)
+            4- 90 degress from 3
+        '''
+        Nel = len(self.Elems.Mat)
+        #self.Angles = np.array((len(self.Elems.Mat)),dtype='f8')
+        if fibertype==0: # Aligned with X,Y
+            self.Angles = np.zeros((Nel),dtype='f8')
+        elif fibertype==1: # Random
+            self.Angles = np.random.random((Nel))*180
+        elif fibertype==2: # Dir Zero Curv
+            self.Angles = np.zeros((Nel),dtype='f8')
+            Vmm=np.array([0.0,0.0,0.0])
+            for el in range(Nel):
+                Vmm*=0.0
+                for ni in self.MeshClass.EN[el]:
+                    Vmm+=self.MeshClass.NMinMag[ni]
+                angle = np.degrees(np.arctan2(Vmm[1],Vmm[0]))
+                if angle<0: angle+=360
+                if angle>180: angle-=180
+                self.Angles[el]=angle
+        elif fibertype==3 or fibertype==4 : # Linear function
+            self.Angles = np.zeros((Nel),dtype='f8')
+            a,b = linfuncparam
+            for el in range(Nel):
+                y_coord = 0.0
+                for ni in self.MeshClass.EN[el]:
+                    y_coord+=self.Nodes.Mat[ni]["y"]
+                y_coord/=3.0
+                angle = y_coord*a+b
+                if fibertype==4:angle-=90.0
+                self.Angles[el]=angle
+
     # Add Parts to feb File
 
     def addBeginning(self):
@@ -690,7 +753,7 @@ class FEBioIO(BaseIO):
         Constants = self.createChild(Globals,"Constants")
         self.addObjectsAsChildren(Constants,{"T":"0","R":"0","Fc":"0"})
 
-    def addMaterial(self):
+    def addMaterial(self,prestrain=False,dispersion=False,kip=0.15833):
         # Material
         Material = self.createChild(self.febio_spec,"Material")
 
@@ -698,19 +761,32 @@ class FEBioIO(BaseIO):
         material1 = self.createChild(Material,"material")
         material1.setAttribute("id", "1")
         material1.setAttribute("name", "Material1")
-        material1.setAttribute("type", "uncoupled solid mixture")
 
-        # solid NH
-        solidnh = self.createChild(material1,"solid")
+        if prestrain:
+            material1.setAttribute("type", "uncoupled prestrain elastic")
+            prestrain = self.createChild(material1,"prestrain")
+            prestrain.setAttribute("type", "prestrain gradient")
+            elastic = self.createChild(material1,"elastic")
+
+        else:
+            elastic = material1
+
+        elastic.setAttribute("type", "uncoupled solid mixture")
+        # Matrix
+        solidnh = self.createChild(elastic,"solid")
         solidnh.setAttribute("type", "Mooney-Rivlin")
         self.addObjectsAsChildren(solidnh,{"c1":"0.08","c2":"0.0","k":"1000"}) #E=2MPa => G=0.66uN/um2 => c1=0.33
 
-        # solid fiber
-        solidf = self.createChild(material1,"solid")
-        solidf.setAttribute("type", "fiber-exp-pow-uncoupled")
-        self.addObjectsAsChildren(solidf,{"ksi":"0.08","alpha":"200","beta":"2.0","theta":"0.0","phi":"90.0"})
+        # Fibers
+        solidf = self.createChild(elastic,"solid")
+        if dispersion:
+            solidf.setAttribute("type", "hdispfibers")
+            self.addObjectsAsChildren(solidf,{"k1":"0.08","k2":"200","kip":str(kip),"kop":"0.5"})
+        else:
+            solidf.setAttribute("type", "fiber-exp-pow-uncoupled")
+            self.addObjectsAsChildren(solidf,{"ksi":"0.08","alpha":"200","beta":"2.0","theta":"0.0","phi":"90.0"})
 
-    def addGeometry(self):
+    def addGeometry(self,prestrain=False):
         # Geometry
         Geometry = self.createChild(self.febio_spec,"Geometry")
 
@@ -751,13 +827,39 @@ class FEBioIO(BaseIO):
             string=",".join([str(self.Elems.Mat[el][lab]+1) for lab in ["p1","p2","p3"]])
             self.addText(elem_nodes,string)
 
-    def addMeshData(self,thickness=30.0,fibertype=0,linfuncparam=(-0.0835,156.738)):
+
+        if prestrain:
+            #ElementData - Prestrain Deformation
+            ElementData = self.createChild(Geometry,"ElementData")
+            for el in range(len(self.Elems.Mat)):
+                elem = self.createChild(ElementData,"element")
+                elem.setAttribute("id",str(el+1))
+
+                elem_F0 = self.createChild(elem,"F0")
+
+                angle = self.Angles[el]
+                normal = self.MeshClass.ENorms[el]
+                normal/=np.linalg.norm(normal)
+                V=np.array([np.cos(np.radians(angle)), np.sin(np.radians(angle)), 0])
+                nz = np.array([0,0,1])
+                avec = V-np.dot(V,normal)/np.dot(nz,normal)*nz
+                avec/=np.linalg.norm(avec)
+                dvec=np.cross(normal,avec)
+
+                Q=np.stack((avec,dvec,normal),axis=1)
+                lam=1.3
+                Fs=np.array([
+                    [lam,0,0],
+                    [0,lam,0],
+                    [0,0,1/(lam**2)]
+                ])
+                F=Q@Fs@Q.T
+
+                text=",".join([  ",".join([str(F[i,j]) for j in range(3)])  for i in range(3)])
+                self.addText(elem_F0,text)
+
+    def addMeshData(self,thickness=30.0):
         '''thickness default = 30 um
-        fibertype default = 0
-            0- aligned with X (like 3 with a,b=0)
-            1- random
-            2- direction of zero curvature
-            3- linear function (linfuncparam = [a,b] angle = a*y_coord+b)
         '''
         
         # MeshData
@@ -778,25 +880,6 @@ class FEBioIO(BaseIO):
         ElementData.setAttribute("var","mat_axis")
         ElementData.setAttribute("elem_set","Part1")
 
-        self.MeshClass.ComputeNormals()
-        if fibertype==2:
-            self.MeshClass.ComputeCurvatures()
-            Director_Vector_List = [
-                [[551,1204,707],[0.55,-0.17,0.82]],
-                [[767,1015,759],[0.07,0.75,0.65]],
-                [[995,1094,740],[-0.43,0.57,0.7]],
-                [[407,943,402],[0.78,-0.53,0.32]],
-                [[778,689,463],[0.41,0.66,0.63]],
-                [[1066,709,442],[-0.02,0.85,0.52]],
-                [[373,442,154],[0.8,-0.6,0.08]],
-                [[708,239,206],[0.64,0.66,0.38]],
-                [[965,313,263],[0.27,0.9,0.35]],
-            ]
-            Aux_Vec = [-0.15,0.88,0.45]            
-            self.MeshClass.ReadjustMinCurvDirections(Director_Vector_List=Director_Vector_List)
-            self.MeshClass.FlipMinCurvDirections(Aux_Director_Vector=Aux_Vec)
-
-        a,b=linfuncparam
         for el in range(len(self.Elems.Mat)):
             elem_mat_axis = self.createChild(ElementData,"elem")
             elem_mat_axis.setAttribute("lid",str(el+1))
@@ -804,34 +887,17 @@ class FEBioIO(BaseIO):
             elem_mat_axis_a = self.createChild(elem_mat_axis,"a")
             elem_mat_axis_d = self.createChild(elem_mat_axis,"d")
 
-            if fibertype==0: # Aligned with X,Y
-                angle=0
-            elif fibertype==1: # Random
-                angle=np.random.random()*180
-            elif fibertype==2: # Dir Zero Curv
-                Vmm=np.array([0,0,0])
-                for ni in self.MeshClass.EN[el]:
-                    Vmm+=self.MeshClass.NMinMag[ni]
-                angle = np.degrees(np.arctan2(Vmm[1],Vmm[0]))
-                if angle<0: angle+=360
-                if angle>180: angle-=180
-            elif fibertype==3: # Linear function
-                y_coord = 0
-                for ni in self.MeshClass.EN[el]:
-                    y_coord+=self.Nodes.NodesMat[ni]["y"]
-                y_coord/=3.0
-                angle = y_coord*a+b
-
+            angle = self.Angles[el]
             normal = self.MeshClass.ENorms[el]
+            normal/=np.linalg.norm(normal)
             V=np.array([np.cos(np.radians(angle)), np.sin(np.radians(angle)), 0])
             nz = np.array([0,0,1])
             avec = V-np.dot(V,normal)/np.dot(nz,normal)*nz
             avec/=np.linalg.norm(avec)
-
             dvec=np.cross(normal,avec)
+
             self.addText(elem_mat_axis_a,",".join([str(x) for x in avec]))
             self.addText(elem_mat_axis_d,",".join([str(x) for x in dvec]))
-
 
     def addBoundary(self):
         # Boundary
@@ -919,32 +985,39 @@ class FEBioIO(BaseIO):
 
         pressure = self.createChild(surface_load,"pressure")
         pressure.setAttribute("lc","1")
-        self.addText(pressure,str(load)) #2MPa
+        self.addText(pressure,str(load))
 
         linear = self.createChild(surface_load,"linear")
         self.addText(linear,"0")
       
 
-    def SaveFile(self,febiofile,Endi=None,):
+    def SaveFile(self,febiofile,Endi=None,fibertype=0,prestrain=False,dispersion=False,kip=0.15833,load=-2E-2):
         if Endi is not None:
             self.Endi = Endi
         if self.Endi == "=":
             self.Endi=SYS_ENDI
         self.NormEndi()
     
-        # Root element
+        print("Process necessary geometrical data ...")
+        self.processdata(fibertype=fibertype)
+
+        print("Begin creating FEBio File ...")
         self.doc = xml.dom.minidom.Document()
         self.febio_spec = self.createChild(self.doc,"febio_spec")
         self.febio_spec.setAttribute("version", "2.5")
 
         self.addBeginning()
-        self.addMaterial()
-        self.addGeometry()
+        self.addMaterial(prestrain=prestrain,dispersion=dispersion,kip=kip)
+        
+        print("Create Geometry ...")
+        self.addGeometry(prestrain=prestrain)
+        print("Create MeshData ...")
         self.addMeshData()
+        print("Finish BCs and loadings ...")
         self.addBoundary()
         self.addLoadData()
         self.addOutput()
-        self.addStep(load=2E-3)
+        self.addStep(load=load)
 
         with open(febiofile, 'w') as fp:
             self.doc.writexml(fp, addindent="    ", newl='\n')
