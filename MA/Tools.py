@@ -123,8 +123,12 @@ def GetBinRepr(InpFile,OutFile=None):
 
 ### MATPLOTLIB ###
 
-# QuickPlot
 def QPlot(x,y):
+    ''' Quickly plot line(s).
+
+    x - array with xvalues
+    y - array or list of arrays with y values.
+    '''
     if not type(y[0])==type([]):
         y=[y]
     
@@ -138,6 +142,11 @@ def QPlot(x,y):
 
 
 def QMPlot(Xa,Ya,marker=""):
+    ''' Quickly plot multiple lines.
+    Xa - list of arrays with x values
+    Ya - list of arrays with y values
+    marker[""] - change to add a marker to the plots (e.g. marker="o")
+    '''
     fig = plt.figure(figsize=(8,6))
     axs  = fig.add_subplot(111)
     linelist=["-",":","-."]
@@ -147,9 +156,15 @@ def QMPlot(Xa,Ya,marker=""):
     fig.show()
     plt.waitforbuttonpress()
     plt.close(fig)
-
-# Save figure    
+ 
 def SaveMPLfig(fig,FileName=None):
+    ''' Show or robust save a Matplotlib figure. Will generate a new pdf file if the 
+    current one is open instead of failing.
+
+    fig - fig object from matplotlib
+    FileName[None] - Name of file to save. If file is open, instead of failing it 
+                     saves the file in a new filename with the date.
+    '''
     if FileName is None:
         fig.show()
         plt.waitforbuttonpress()
@@ -163,6 +178,8 @@ def SaveMPLfig(fig,FileName=None):
             fig.savefig(FileName[:-4]+' (conflict_'+ct+').pdf')       
 
 def QuickHist(X,N=50):
+    '''Quicky make a histogram of X.
+    N[50] - number of bins for the histogram.''' 
     X=np.array(X).flatten()
     fig = plt.figure()
     ax=fig.add_subplot(111)
@@ -174,8 +191,13 @@ def QuickHist(X,N=50):
             
 ### OTHER ###
 
-# Circular Moving Average
 def CircularMovingAverage(InputVector, n=3, LastIsFirst=True):
+    ''' Compute a Circular Moving Average, i.e. first and last elements influence eachother.
+    
+    InputVector - Array for which the moving average will be computed.
+    n[3] - size of the moving average
+    LastIsFirst[True] - Set to true is first and last values are the same point in the circle (e.g. 0 degrees and 360 degrees)
+    '''
     a=InputVector
     if LastIsFirst:
         a=InputVector[:-1]
@@ -188,14 +210,21 @@ def CircularMovingAverage(InputVector, n=3, LastIsFirst=True):
         out=np.concatenate((out,[out[0]]))
     return out
 
-#Run a MeshLab Script
 def RunMeshLabScript(Mesh_Path,Script_Path,Output_Path=None,Verbose=False,MeshLabPath=None):
-    if Output_Path is None:
-        Base,Ext = os.path.splitext(Mesh_Path)
-        Output_Path = Base + "_out" + Ext
+    '''Run a MeshLab Script.
     
-    SetupOutput(Output_Path)
-    if MeshLabPath is None:
+    Mesh_Path - Path to mesh
+    Script_Path - Path to script
+    Output_Path[None] - Path to output file. Default of None will generate an output path automatically.
+    Verbose[False] - T/F print the output of running the script.
+    MeshLabPath[None] - path of Meshlab. Default of None will try to run script assuming meshlab is in the PATH environment variable'''
+
+    if Output_Path is None: # Create an automatic output file in user does not provide one
+        Base,Ext = os.path.splitext(Mesh_Path) # Get file name and extensions seperately
+        Output_Path = Base + "_out" + Ext 
+    
+    SetupOutput(Output_Path) 
+    if MeshLabPath is None: # If path of Meshlab not given, hope that meshlabserver path is in the PATH environment variable
         prog = "meshlabserver"
     else:
         prog = '"'+os.path.join(MeshLabPath,"meshlabserver")+'"'
@@ -208,6 +237,10 @@ def RunMeshLabScript(Mesh_Path,Script_Path,Output_Path=None,Verbose=False,MeshLa
 
 #Run a Shell process
 def RunProgram(cmd,f_print=True):
+    ''' Run comand in command line.
+
+    cmd - String with the command (example: git pull)
+    f_print[True] - Boolean that will print the output of running the command''' 
     process = subprocess.Popen(cmd,shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
     while process.poll() is None:
         outl = process.stdout.readline().strip()
@@ -220,13 +253,15 @@ def RunProgram(cmd,f_print=True):
 
 #Tic/Toc
 def Tic(p=False):
-    ''' Gets current time. Returns current time. p=True also prints to screen ''' 
+    ''' Gets and returns current time.
+    p[True] - Prints current time to screen. ''' 
     t=timeit.default_timer()
     if p: print("Tic: " + str(t))
     return t
     
 def Toc(s,p=False):
-    ''' Gets current time and subtracts input time. Returns time difference. p=True also prints to screen ''' 
+    ''' Gets current time and subtracts input time. Returns time difference.
+    p[True] - Prints current time to screen. ''' 
     t=timeit.default_timer()
     d=t-s
     if p: print("Toc: " + str(d))
@@ -234,6 +269,14 @@ def Toc(s,p=False):
     
 #Time a function
 def Timeme(funct,var,NN=10,NNN=10,show=True):
+    ''' Measure the computational time of a function. Returns average time across NN runs of NNN trials.
+
+    funct - Function pointer to the function to be measured.
+    var - List/Tuple with variables that are needed as inputs for the function.
+    NN - Integer with the number of tests runs.
+    NNN - Number of trials for each of the test runs. Test run result is the average across NNN times.
+    show[True] - T/F Show the results on the screen.
+    '''
     TotTime=0
     for i in range(NN):
         start =timeit.default_timer()
@@ -246,11 +289,11 @@ def Timeme(funct,var,NN=10,NNN=10,show=True):
     return TotTime/NN
 
 def Pause(seconds):
+    '''Pause the simulation for X number of seconds'''
     time.sleep(seconds)
     
-
-#Get data from CSV format to numpy matrix format
-def getMatfromCSV(fn):     
+def getMatfromCSV(fn):
+    '''Get data from CSV format to numpy matrix format. Probably better to use pandas'''
     data=[]
     if not fn[-4:].lower() == '.csv':
         fn=fn+".csv"
@@ -260,21 +303,24 @@ def getMatfromCSV(fn):
             data.append(np.array(row).astype(np.float32))
     return np.array(data)
 
-#Apply McAuley brackets    
+   
 def macauley(M,p=True):
+    '''Apply McAuley brackets. f(x)=x if x>0 else 0.
+
+    p[True] - T/F Use positive x. If false f(x)=x if x<0 else 0.'''
     if p:
         M[M<0]=0
     else:
         M[M>0]=0
     return M
     
-# Invert Dictionary
 def invidct(mydict):
+    '''Invert dictionary making the values keys and the keys values'''
     return {v: k for k, v in list(mydict.items())} 
 
     
-#Compute eigenvalues of symetric 3x3 matrix    
 def eig33s(A11,A22,A33,A12,A13,A23):
+    '''Compute eigenvalues of symetric 3x3 matrix'''
 
     p1 = A12**2 + A13**2 + A23**2
     if (p1 == 0): # A is diagonal.
