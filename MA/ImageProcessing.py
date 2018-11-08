@@ -16,8 +16,33 @@ from matplotlib import cm
 import matplotlib.colors as cols
 import MA.Tools as MATL
 
+'''
+This module was developed to contain different image
+processing tools. Some of the tools work with the images
+in a numpy format.
+
+It also contains the fitting algorithm that takes two tiff
+height images and gets the transformation vectors to get
+them to fit as closely as possible.
+
+### Note on image matrix formats ###
+
+Consider an image given by:
+  00 10 20
+  15 25 35
+  30 40 50 
+There are two formates for storing this image in a matrix.
+ 1) Image format - Typical image formats usually store a matrix such that positions (0,0), (1,0), (1,2) would be 00, 15, 35.
+ 2) Coord format - This format will behave as if indexes are coordinates, such that positions (0,0), (1,0), (1,2) would be 30, 40, 10.
+'''
+
+
 # === Operate on images
 def FlipImage(NameIn,NameOut):
+    '''
+    Flips a tiff image horizontally. This was implemented
+    to make right-ear images match left-ear images.
+    '''
     Ext = NameIn[-3:].lower()
     isTif = (Ext == 'tif' or Ext == 'iff')
     Img = Image.open(NameIn)
@@ -30,14 +55,7 @@ def FlipImage(NameIn,NameOut):
     else: 
         FlippedImage.save(NameOut)
 
-### Note on image matrix formats ###
-# Consider an image given by:
-#   00 10 20
-#   15 25 35
-#   30 40 50 
-# There are two formates for storing this image in a matrix.
-#  1) Image format - Typical image formats usually store a matrix such that positions (0,0), (1,0), (1,2) would be 00, 15, 35.
-#  2) Coord format - This format will behave as if indexes are coordinates, such that positions (0,0), (1,0), (1,2) would be 30, 40, 10.
+
 
 # === Conversion between formats of Matrices
 def Image2np(Mpix):
@@ -223,7 +241,7 @@ def MaskedSmooth(Matrix,N=1):
 
     corrector = convolve2d(Mask, aux_kernel, 'same')
     result = Matrix.copy()
-    for j in range(N):
+    for _ in range(N):
         result = result * corrector + convolve2d(result, kernel, 'same')
         result[Mask]=0
     return result
@@ -389,6 +407,7 @@ class CoordsObj(object):
         return self.Mat
 
     def getTransformedMat(self,R,T,pavg=None,MN=None,XYScaling=None,GetResolution=False):
+        ''' Gets matrix after being transformed by R and T'''
         if (self.Mat is None) or (MN != self.MN) or (XYScaling != self.XYScaling):
             self.fixXYScaling(XYScaling)
             self.fixMN(MN)
@@ -397,6 +416,10 @@ class CoordsObj(object):
             return Mat
 
     def getIJ(self,R=None,T=None,pavg=None):
+        '''
+        Get points of Coords object in pixel units and exclude
+        points that are outside the bounds of the image. 
+        '''
         if R is None: R=np.array([0,0,0])
         if T is None: T=np.array([0,0,0])
 
@@ -457,6 +480,7 @@ class CoordsObj(object):
 
     @classmethod
     def rotationMatrixToEulerAngles(cls,RM):
+        ''' Get the Euler angles given the rotation matrix. Equivalent to the inverse of getRotationMatrix()'''
         sy = math.sqrt(RM[0,0] * RM[0,0] +  RM[1,0] * RM[1,0])
         singular = sy < 1e-6
     
@@ -584,6 +608,8 @@ class ImageFit(object):
     # SOLVING
 
     def Solve(self,silent=False):
+        ''' Function to solve the minimization algorithm.
+        Returns the transformation information and the fitting accuracy.'''
         # Get initialization parameters
         self.RT0a = self.getRTarr(self.GetInitialization())
         # R,T = self.GradientDescent(self.RT0a)
@@ -639,6 +665,7 @@ class ImageFit(object):
 
     @staticmethod
     def getRTtup(X):
+        ''' Convert solution array format into R and T'''
         if len(X)==6:
             return X[0:3],X[3:6]
         elif len(X)==7:
@@ -646,41 +673,58 @@ class ImageFit(object):
         
     @staticmethod
     def getRTarr(tup):
+        '''convert R and T into solution array format'''
         return np.concatenate(tup)
 
     def CostFunction(self,RT,printdetails=False):
+        ''' Cost function to minimize the distance between the two membranes.'''
+
+        # get the tranformed coordinates of the image to fit in pixel units
         R,T=self.getRTtup(RT)
         IJNew,ZNew = self.CImage.getIJ(R,T,pavg=self.O_New)
 
+        # get the integer upper and lower values of the x,y coordinates in pixel units
         IJi=np.floor(IJNew).astype(np.int32)
         IJf=np.ceil(IJNew).astype(np.int32)
 
+        # Fix cases where coordinates were already integers
         posisInt = IJf==IJi
         IJf[posisInt]+=1
 
+        # Get fraction value that the coordinate takes between the lower integer and the upper integer
         alf=(IJNew-IJi)/(IJf-IJi)
+        # Get from the reference image the Z values of the 4 corners of the square inside which the coordinate resides
         Zii=self.CReference.Mat[IJi[:,0],IJi[:,1]]
         Zif=self.CReference.Mat[IJi[:,0],IJf[:,1]]
         Zfi=self.CReference.Mat[IJf[:,0],IJi[:,1]]
         Zff=self.CReference.Mat[IJf[:,0],IJf[:,1]]
         
+        # Ignore the points of the fitting membrane that are above empty spaces in the reference membrane.
         Iii=Zii>self.RefInactiveThreshold
         Iif=Zif>self.RefInactiveThreshold
         Ifi=Zfi>self.RefInactiveThreshold
         Iff=Zff>self.RefInactiveThreshold
         II=np.logical_and(np.logical_and(Iii,Iif),np.logical_and(Ifi,Iff))
 
+        # Compute bi-linear interpolation of the z coordinate at the x,y point
         Zai=Zfi*alf[:,0]-Zii*(alf[:,0]-1)
         Zaf=Zff*alf[:,0]-Zif*(alf[:,0]-1)
         Zab=Zaf*alf[:,1]-Zai*(alf[:,1]-1)
 
+        # Compute difference between the fitting image z position and the reference image z position
         DZ=ZNew[II]-Zab[II]
         N=len(DZ)
+        # Compute the average z distance between membranes
         self.AverageDZ = np.sum(np.abs(DZ))/N
         DZ=DZ**2
         # C1=np.sum(DZ)/N # Average SSQ distance between doubly-active points of membranes (best fit)
         C1=self.AverageDZ # Average distance between doubly-active points of membranes (best fit)
         
+        # Below was to prevent membrane from "escaping" the image.
+        # Not needed in the end so not used
+        # Didn't remove because I'm too afraind to change anything now. 
+        # Should actually be fine to remove or comment out.
+
         PI=1-N/len(ZNew) #percentage of nodes not contributing to fit cost
         if printdetails: print("len(ZNew)=",str(len(ZNew)),", len(II)="+str(N),"P1="+str(PI))
         Iai=Ifi*alf[:,0]-Iii*(alf[:,0]-1)
@@ -695,6 +739,7 @@ class ImageFit(object):
         return C1 #+C2
 
     def ComputeGradientCost(self,RT,Incs=None):
+        ''' Compute gradient of cost function by numerical differentiation. '''
         R,T=self.getRTtup(RT)
         if Incs is None:
             DR,DT=1e-9,1e-9
@@ -726,6 +771,7 @@ class ImageFit(object):
         return self.getRTarr((GradientR,GradientT))
     
     def ScipyOptimize(self,RTin,silent=False):
+        '''Use Minimization routine of Scipy to minimize the cost function'''
         options=None
         if not silent: options={"disp":True}
         # options={"maxiter":0}
@@ -739,6 +785,7 @@ class ImageFit(object):
         return R,T,OptResult.fun
 
     def GradientDescent(self,RTin):
+        '''Use self-implemented gradient descent. Not better than Scipy.'''
         Gamma=1E-10
         Rin,Tin = self.getRTtup(RTin)
         R,T=np.array(Rin),np.array(Tin)
@@ -769,6 +816,7 @@ class ImageFit(object):
         return R,T
 
     def AdjustGamma(self,R,T,R_old,T_old,GR,GT,GR_old,GT_old):
+        '''Compute adjusted gamma for gradient descent'''
         dr,dgr=R-R_old,GR-GR_old
         denR=np.dot(dgr,dgr)
         dt,dgt=T-T_old,GT-GT_old
@@ -776,6 +824,7 @@ class ImageFit(object):
         return ((np.dot(dr,dgr)+np.dot(dt,dgt))/(denR+denT))
 
     def LineSearchSimple(self,Ro,To,Gamma,dr,dt):
+        '''Do line search in gradient direction'''
         def cost(a): return self.CostFunction(self.getRTarr((Ro-a*Gamma*dr,To-a*Gamma*dt)))
         CO = cost(0.0)
 
@@ -807,6 +856,13 @@ class ImageFit(object):
 # ADDITIONAL DRAWING FUNCTIONS IN PIL
 
 def drawCircle(Draw,xy,diameter,**kwargs):
+    '''draw a circle
+
+    Draw - draw object in PIL
+    xy - tuple with x and y coordinates of the center of the circle
+    diameter - diameter of the circle
+    '''
+
     x, y =xy
     diameter = int(diameter)-1
     r = int(diameter/2)
@@ -816,7 +872,7 @@ def drawCircle(Draw,xy,diameter,**kwargs):
     Draw.ellipse(ltrb, **kwargs)
 
 def draw_ellipse(image, bounds, width=3, outline='white', antialias=2):
-    """Improved ellipse drawing function, based on PIL.ImageDraw.
+    """Improved ellipse drawing function, based on PIL.ImageDraw. Has outline option.
     
     TODO: 1- Use Draw as input instead of image. 2- For speed only do AA on the ellipse instead of the whole image.
     """
@@ -885,6 +941,7 @@ def drawArrow(Draw,xyi,vec,scale=100,width=0.13,color='black',tip="rounded",angl
 
 
 def drawTextWithOutline(Draw,xy,text,font,text_color='white',outl_width=3,outl_color='black'):
+    ''' Draw a text with outline. Outline method is very crude, but works.'''
     x,y = xy
     
     Draw.text((x+0*outl_width, y+outl_width),text,outl_color,font=font)
@@ -918,6 +975,10 @@ def drawScalebar(Draw,barLength=200,scale=1.0,font=None,imgsize=2048,color='blac
 
 
 def _MarkPointsInPILImage(BImg,OutputName,Data,radius=10,offset=8,fontSize=48,scale=1400/2048.0,imgsize=2048,scalebarcolor='black',plotarrow=True):
+    '''
+    Very specialized function to draw the points (left, right, top, center and bottom) of the membrane
+    with its corresponding names and fiber directions. It also add a scale bar.
+    '''
     ColSequence = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33','#a65628','#f781bf','#999999'] #http://colorbrewer2.org
     Draw = ImageDraw.Draw(BImg)
     dimscale = imgsize/2048
@@ -934,7 +995,7 @@ def _MarkPointsInPILImage(BImg,OutputName,Data,radius=10,offset=8,fontSize=48,sc
                  "Top":ColSequence[4],
                  "Bottom_Right":ColSequence[5]}
 
-    for index, row in Data.iterrows():
+    for index , row in Data.iterrows(): #pylint: disable=W0612
         x_raw,y_raw= row["X_T"],row["Y_T"]
         label = row["Position"]
         color = colordict[label] #ColSequence[index]
@@ -970,8 +1031,8 @@ def MarkPointsInImage(ImageName,OutputName,Data,**kwargs):
         
 # SPECIAL IMAGES
 
-# Make image with fibers given by raised cosine for ang and freq    
 def CosAng(i,j,ang=0,freq=20):
+    '''plane wave function'''
     M,N  = np.shape(i)
     Angr=ang*np.pi/180
     x=i/M-1/2
@@ -980,10 +1041,12 @@ def CosAng(i,j,ang=0,freq=20):
     return (np.cos(eta*2*np.pi*freq)+1)/2
 
 def MakeCosImage(MN,**kwargs):
+    '''Image with plane wave between 0 and 1 with a certain angle and frequency'''
     return np.fliplr(np.transpose(np.fromfunction(CosAng,MN,**kwargs)))
 
 # Make image of a semi-sphere
 def ShperePix(i,j,R=None):
+    '''semi-sphere function'''
     M,N  = np.shape(i)
     if R is None: R=min(M,N)/2
     x=i-M/2
@@ -993,9 +1056,11 @@ def ShperePix(i,j,R=None):
     return np.sqrt(rad)
 
 def MakeSphereImage(MN,**kwargs):
+    '''Image with semi-sphere between 0 and 1 with a certain radius'''
     return np.fliplr(np.transpose(np.fromfunction(ShperePix,MN,**kwargs)))
 
 def DistancePL(Point,Line):
+    '''distance between a point and a line'''
     a,b = np.array(Line)
     p = np.moveaxis(np.array(Point), 0, -1)
     T = np.linalg.norm(b-a)
@@ -1014,6 +1079,7 @@ def DistancePL(Point,Line):
 
 
 def RPix(i,j,d=0.1):
+    '''function to generate a large letter R'''
     M,N  = np.shape(i)
     if d is None: d=0.1
     x=2*i/(M-1)-1 # x in [-1,1]
@@ -1035,4 +1101,5 @@ def RPix(i,j,d=0.1):
     return np.sqrt(V)
 
 def MakeRImage(MN,**kwargs):
+    '''Image with large R letter between 0 and 1'''
     return np2Image(np.fromfunction(RPix,MN,**kwargs))
