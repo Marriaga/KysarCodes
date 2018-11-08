@@ -14,6 +14,62 @@ import xml.dom.minidom
 import numba as nb
 
 
+'''
+MeshIO Module
+=============
+
+This module deals with importing/exporting and processing meshes.
+
+There are two types of classes:
+
+1) Mesh classes - These have the necessary data structures and functions to
+   process the mesh information, including computation of normals and curvatures:
+    - CNodes
+    - CElements
+    - MyMesh
+
+2) I/O classes - These convert to these formats from the data in the Mesh classes.
+   currently PLYIO also reads ply data into thr Mesh classes format:
+    - BaseIO
+    - PLYIO
+    - VTUIO
+    - FEBioIO
+
+Typical usage:
+
+import MA.MeshIO as MAMIO
+
+# Import a mesh data from a ply file
+
+Ply = MAMIO.PLYIO()
+Ply.LoadFile(plyFile_Smooth)        # Load Ply File
+Nodes,Elems = Ply.ExportMesh()      # Get Data in mesh classes format
+MyM = MAMIO.MyMesh(Nodes,Elems)     # Create Mymesh object
+
+# Process the mesh data
+
+MyM.ComputeNormals()                # Compute Normals
+MyM.ComputeCurvatures()             # Compute Curvatures
+MyM.SmoothCurvatures(SmoothN)       # Smooth Curvatures 
+MyM.ComputeCurvaturePrincipalDirections() # Compute Principal Directions
+MyM.ReadjustMinCurvDirections() # Readjust Min Curvature Directions
+MyM.Nodes.AppendArray(MyM.NNorms,'n') # Add Normal Vector to the nodal data
+
+# Output the mesh data into a ply format
+
+Ply = MAMIO.PLYIO()
+Ply.ImportMesh(MyM.Nodes,MyM.Elems)
+Ply.SaveFile(path/to/ouputfile.ply)
+
+# (Alternatively) Output the mesh data into a vtu format
+
+Vtu = MAMIO.VTUIO()
+Vtu.VecLabs.append(["normal",["nx","ny","nz"]])
+Vtu.ImportMesh(MyM.Nodes,MyM.Elems)
+Vtu.SaveFile(path/to/ouputfile.vtu)
+'''
+
+
 # Get Endienness of System
 SYS_ENDI = {'little': '<','big': '>'}[sys.byteorder]
 
@@ -25,12 +81,13 @@ ENDI_CONVERSION = {
 # Dictionary for numpy->ply endienness
 INV_ENDI_CONVERSION = MATL.invidct(ENDI_CONVERSION)
 
-# Get Endi in numpy format (from ply)
+
 def GetEndinp(val):
+    '''Get Endi in numpy format (from ply)'''
     return ENDI_CONVERSION[val]    
 
-# Get Endi in ply format (from numpy)
 def GetEndiply(val):
+    '''Get Endi in ply format (from numpy)'''
     return INV_ENDI_CONVERSION[val]
     
 # Dictionary for ply->numpy data types  
@@ -46,20 +103,28 @@ TYPE_CONVERSION ={
 # Dictionary for numpy->ply data types  
 INV_TYPE_CONVERSION=MATL.invidct(TYPE_CONVERSION)
 
-# Get datatype in numpy format (from ply)
 def ply2numpy(plytype,endi):
-    #endi: < - little; > - Big
+    '''Get datatype in numpy format (from ply)
+    
+    endi: < - little; > - Big
+    '''
     if endi == "=": endi = SYS_ENDI
     return endi + TYPE_CONVERSION[plytype]
     
-# Get datatype in ply format (from numpy)
 def numpy2ply(nptype):
+    '''Get datatype in ply format (from numpy)'''
     if nptype[0] in "=<>": nptype = nptype[1:]
     return INV_TYPE_CONVERSION[nptype]
 
 # Class for collection of properties    
 class MyPropTypes(object):
     def __init__(self):
+        ''' Class for collection of properties. This class keeps track of properties and
+        fields for nodes and elements. It contains default properties line node number,
+        x,y,z positions, rgb values; and also allows the addition of arbitrary new fields.
+
+        Note: Generally this class should not be used directly.
+        '''
         self.AllTypes=dict()
         self.Ltype=[]
         
@@ -77,29 +142,29 @@ class MyPropTypes(object):
         self.AllTypes["p2"]=SYS_ENDI+'i4'
         self.AllTypes["p3"]=SYS_ENDI+'i4'
         
-    # Changes or adds a type in the available types
     def AddBaseType(self,typlbl,type=None):
+        '''Changes or adds a type in the available types'''
         if type is None:
             type='f8'
             print("Warning: Added label "+typlbl+" with no associated type. 'double' assumed")
         self.AllTypes[typlbl] = type
     
-    # Adds a type to the type list    
     def AddTypeToList(self,typlbl,type=None):
+        '''Adds a type to the type list'''
         if (typlbl not in self.AllTypes) or (type is not None):
             self.AddBaseType(typlbl,type)
         
         if typlbl not in self.Ltype:
             self.Ltype.append(typlbl)
             
-    # Get the type of a field with a particular label
     def GetType(self,typlbl):
+        '''Get the type of a field with a particular label'''
         if typlbl not in self.AllTypes:
             self.AddBaseType(typlbl)
         return self.AllTypes[typlbl]
     
-    # Normalize Endienness
     def NormEndi(self,Endi):
+        '''Normalize Endienness'''
         for typlbl in self.Ltype:
             typtyp = self.GetType(typlbl)
             if typtyp[0] in "=<>|":
@@ -107,19 +172,27 @@ class MyPropTypes(object):
             typtyp=Endi+typtyp
             self.AddBaseType(typlbl,typtyp)
     
-    # Get Numpy dtype data
-    def GetDtype(self):           
+    def GetDtype(self):
+        '''Get Numpy dtype data'''       
         ListDTypes=[]
         for typlbl in self.Ltype:
             ListDTypes.append((typlbl,self.GetType(typlbl)))
         return ListDTypes
     
-    # Get NProp
     def GetNProp(self):
+        '''Get number of properties present'''
         return len(self.Ltype)
         
-    #Generates the List
     def MakeListType(self,Types,append=False):
+        '''Generates the list of types.
+        
+        Types - types to set/append. If list, then list is labels and
+                data type will be inferred automatically. If numpy dtype,
+                then labels and types are extracted. If MyPropTypes object,
+                copy the list from the MyPropTypes object.
+        append[False] - If True, append to current list, otherwise replaces.
+        '''
+
         if not append:
             self.Ltype = []
         if type(Types) is np.dtype:
@@ -135,6 +208,14 @@ class MyPropTypes(object):
 # Class for Nodes
 class CNodes(object):
     def __init__(self,Matrix=None,**kwargs):
+        '''This class manages nodal data. It imports coordinates in
+        a matrix form and allows for addition of new fields.
+
+        Matrix[None] - Array of (N),x,y,(z) values. It will be processed
+        and imported into the class.
+        **kwargs - Additional arguments that will be passed to function
+        that imports the Matrix called PutMatrix().
+        '''
         self.is_sequencial=False # Nodes are sequencial in numbering
         self.si=0      # Starting index
         self.Mat=[]    # Numpy array with values
@@ -144,10 +225,22 @@ class CNodes(object):
             self.PutMatrix(Matrix,**kwargs)
         
     def GetNNodes(self):
+        '''Returns number of nodes'''
         return len(self.Mat)
     
     @staticmethod
     def _getArrayLabel(root,nf,i,UseLetters=False):
+        '''Internal function to make array labels from root label.
+
+        root - string for the name of the field
+        nf - size of the dimension (x,y,z has nf=3)
+        i - current dimension index (0 -> x)
+        UseLetters - use x,y,z instead of 0,1,2
+
+        Examples:
+            _getArrayLabel('disp',3,2,UseLetters=True) ->'dispz'
+            _getArrayLabel('v',3,2) ->'v2'
+        '''
         letter=['x','y','z']
         if nf<=3 and UseLetters:
             lbl=root+letter[i]
@@ -156,6 +249,14 @@ class CNodes(object):
         return lbl
 
     def AppendArray(self,myarray,root,UseLetters=True):
+        '''Appends an array to the nodes as several fields based
+        on the root label. dim(myarray) = NumNodes x M (x N)-> saved as
+        MxN fields each labeled "rootij", with i,j in [x,y,z] or [0,1,2,3,...]
+
+        myarray - array to add with dimensions NumNodes x M (x N)
+        root - string for the name of the field
+        UseLetters - use x,y,z instead of 0,1,2
+        '''
         shp=np.shape(myarray)
         if len(shp)>3:
             raise ValueError("ERROR: Export bigger than matrix is not implemented.")
@@ -169,6 +270,14 @@ class CNodes(object):
 
 
     def AppendVector(self,myarray,root,UseLetters=True):
+        '''Appends a vector to the nodes as several fields based
+        on the root label. dim(myarray) = NumNodes x M -> saved as
+        M fields each labeled "rooti", with i in [x,y,z] or [0,1,2,3,...]
+
+        myarray - array to add with dimensions NumNodes x M
+        root - string for the name of the field
+        UseLetters - use x,y,z instead of 0,1,2
+        '''
         shp=np.shape(myarray)
         nf = shp[1]
         for i in range(nf):
@@ -176,6 +285,12 @@ class CNodes(object):
             self.AppendField(myarray[:,i],lbl)
 
     def AppendField(self,myarray,lbl,atype=None):
+        '''Appends a field to the nodes.
+
+        myarray - array to add with length = NumNodes
+        lbl - string for the name of the field
+        atype[None] - datatype of values. 'None' sets datatype from numpy.
+        '''    
         if atype is not None:
             myarray=np.array(myarray,dtype=atype)
         else:
@@ -188,10 +303,15 @@ class CNodes(object):
         else:
             self.Mat[lbl]=myarray
     
-
-    # Takes the Matrix array and creates the Numpy array with the correct data type
     def PutMatrix(self,Matrix,Types=None,isnumbered=False):
-        #isnumbered - Flag to indicate that the input matrix is numbered
+        '''Takes the Matrix array, processes it and creates the Numpy
+        array with the correct data type.
+
+        Matrix - list/array in raw format. Typically NumNodes x 3 (x,y,z)
+        Types[None] - set data types. 'None' infers from dimensions and 'isnumbered'
+        isnumbered[False] - set to True if first column has node numbers.
+        '''
+
         Matrix=np.array(Matrix)
         try:
             NN,NF = np.shape(Matrix)
@@ -241,6 +361,14 @@ class CNodes(object):
             self.si=MN[0]
         
     def RotateAndTranslate(self,R,T):
+        ''' Apply rotation R and translation T to mesh.
+
+        R - List/Tuple with Euler angles (phi,theta,psi)
+        T - List/Tuple with translation vector (dx,dy,dz)
+
+        TODO: If would be interesting to add the possibility
+        to also rotate vector and tensor fields.
+        '''
         x = self.Mat[['x','y','z']]
         Coords = x.view((x.dtype[0], len(x.dtype.names))).copy()
         RCT = MAIP.CoordsObj.ApplyRotationAndTranslation(Coords,R,T,pavg=0)
@@ -250,15 +378,26 @@ class CNodes(object):
         self.Mat['z'] =  RCT[:,2].copy()
 
     def GetNumpyPoints(self,Nlist):
+        ''' Get list of numpy arrays, where each numpy array
+        contains the 3D coordinates of each node in Nlist.
+
+        Nlist - List of node numbers to get the coordinates
+        '''
         if type(Nlist) is int:
             Nlist = [Nlist]
         return [np.array([P['x'],P['y'],P['z']]) for P in [self.Mat[n] for n in Nlist]]
 
-
-
 # Class for Elements
 class CElements(object):
     def __init__(self,Matrix=None,**kwargs):
+        '''This class manages element data. It imports the list of nodes
+        of each element in a matrix form.
+
+        Matrix[None] - Array of (N),p1,p2,p3 values. It will be processed
+        and imported into the class.
+        **kwargs - Additional arguments that will be passed to function
+        that imports the Matrix called PutMatrix().
+        '''
         self.is_sequencial=False # Nodes are sequencial in numbering
         self.si=0      # Starting index
         self.Mat=[]    # Numpy array with values
@@ -268,11 +407,17 @@ class CElements(object):
             self.PutMatrix(Matrix,**kwargs)
         
     def GetNElems(self):
+        '''Returns number of elements'''
         return len(self.Mat)
         
-    # Takes the Matrix array and creates the Numpy array with the correct data type
     def PutMatrix(self,Matrix,Types=None,isnumbered=False):
-        #isnumbered - Flag to indicate that the input matrix is numbered
+        '''Takes the Matrix array, processes it and creates the Numpy
+        array with the correct data type.
+
+        Matrix - list/array in raw format. Typically NumElements x 3 (p1,p2,p3)
+        Types[None] - set data types. 'None' infers from dimensions and 'isnumbered'
+        isnumbered[False] - set to True if first column has node numbers.
+        '''
         Matrix=np.array(Matrix)
         try:
             NN,NF = np.shape(Matrix)
@@ -317,9 +462,17 @@ class CElements(object):
             self.is_sequencial=True
             self.si=MN[0]
 
-
+# Base class for I/O
 class BaseIO(object):
     def __init__(self):
+        '''This is the base class for I/O. It defines the basic
+        constitutints of a I/O class, including functions to
+        import and export the mesh information.
+        
+        TODO: It would make sense to do a refactoring of the I/O classes
+        such that they would only depend on a MyMesh object as opposed
+        to both a CNodes object and a CElements objects
+        '''
         self.PropTypes=MyPropTypes()
         self.EPT=MyPropTypes()
         self.Endi = SYS_ENDI
@@ -328,8 +481,8 @@ class BaseIO(object):
         self.Nodes = []
         self.Elems = []
 
-    # Reformat data to match Endi
     def NormEndi(self):
+        '''Reformat data to match Endi'''
         self.PropTypes.NormEndi(self.Endi)
         self.Nodes.Mat=self.Nodes.Mat.astype(self.PropTypes.GetDtype())
         self.EPT.NormEndi(self.Endi)
@@ -338,44 +491,54 @@ class BaseIO(object):
     ## -- DATA INPUT/OUTPUT OPERATIONS -- ##
     
     def ExportMesh(self):
+        '''Get CNodes and CElements objects'''
         return self.Nodes, self.Elems
         
     def ImportMesh(self,Nodes,Elems):
+        '''Set CNodes and CElements objects'''
         self.Nodes = Nodes
         self.Elems = Elems
         self.RefreshNodes()
         self.RefreshElems()
         self.MeshClass = MyMesh(self.Nodes,self.Elems)
         
-    # Refresh Local Properties for Nodes
     def RefreshNodes(self):
+        '''Refresh Local Properties for Nodes'''
         self.PropTypes = self.Nodes.PropTypes
         self.NNodes = self.Nodes.GetNNodes()
         
-    # Refresh Local Properties for Elemens
     def RefreshElems(self):
+        '''Refresh Local Properties for Elemens'''
         self.EPT = self.Elems.PropTypes
         self.NElem = self.Elems.GetNElems()
 
     def SetNodes(self,Matrix,**kwargs):
+        '''Set CNodes object'''
         self.Nodes = CNodes(Matrix,**kwargs)
         self.RefreshNodes()
         
     def SetElems(self,Matrix,**kwargs):
+        '''Set CElements object'''
         self.Elems = CElements(Matrix)
         self.RefreshElems()
             
 # Class for PLY I/O
 class PLYIO(BaseIO):
     def __init__(self,Load_File=None):
+        ''' Class to do I/O with ply format. So far it is the 
+        only format that allows input. 
+
+        Load_File[None] - the path to ply file to import (if not None)
+        '''
+
         BaseIO.__init__(self)
         if Load_File is not None:
             self.LoadFile(Load_File)
     
     ## -- READING PLY OPERATIONS -- ##
     
-    # Load File
     def LoadFile(self,plyfile):
+        '''Load a ply file'''
         with open(plyfile, 'rb') as fp:
             self.ReadHeader(fp)
             if self.Endi == "=":
@@ -385,8 +548,8 @@ class PLYIO(BaseIO):
                 self.ReadNodesBinary(fp)
                 self.ReadElemsBinary(fp)
                 
-    # Read the ply header            
     def ReadHeader(self,fp):
+        '''Internal function to read the header of a ply file'''
         stage=0
         while True:
             lvs=fp.readline().decode().rstrip().split()
@@ -410,8 +573,8 @@ class PLYIO(BaseIO):
                 elif stage == 2: #TODO: implement colection of element properties
                     pass
                       
-    # Read Node Info in ASCII
     def ReadNodesASCII(self,fp):
+        '''Internal function to read the nodes of a ply file in ASCII format'''
         Nodes = np.empty(self.NNodes,dtype=np.dtype(self.PropTypes.GetDtype()))
         NP = self.PropTypes.GetNProp()
         for i in range(self.NNodes):
@@ -420,8 +583,8 @@ class PLYIO(BaseIO):
                 Nodes[i][p]=linelist[p]
         self.SetNodes(Nodes,Types=self.PropTypes)
                 
-    # Read Element Info in ASCII
     def ReadElemsASCII(self,fp):
+        '''Internal function to read the elements of a ply file in ASCII format'''
         Elems = np.zeros(self.NElem,dtype=[('p1','i4'),('p2','i4'),('p3','i4')])
         NP = 3
         for i in range(self.NElem):
@@ -430,13 +593,13 @@ class PLYIO(BaseIO):
                 Elems[i][p]=linelist[p]
         self.SetElems(Elems)
 
-    # Read Node Info in ASCII
     def ReadNodesBinary(self,fp):
+        '''Internal function to read the nodes of a ply file in binary format'''
         Nodes = np.fromfile(fp,dtype=self.PropTypes.GetDtype(),count=self.NNodes)
         self.SetNodes(Nodes,Types=self.PropTypes)
                 
-    # Read Element Info in ASCII
     def ReadElemsBinary(self,fp):
+        '''Internal function to read the elements of a ply file in binary format'''
         Elems = nprec.drop_fields(np.fromfile(fp,dtype=[('count', 'u1'),('p1','i4'),('p2','i4'),('p3','i4')],count=self.NElem),'count')
         self.SetElems(Elems)
          
@@ -444,6 +607,12 @@ class PLYIO(BaseIO):
     ## -- WRITE PLY OPERATIONS -- ##
     
     def SaveFile(self,plyfile,Endi=None,asASCII=False):
+        '''Save mesh to ply file.
+        
+        plyfile - path to output plyfile
+        Endi[None] - set the endienness of the binary output
+        asASCII - output as ASCII text instead of binary (slower and larger).
+        '''
         if Endi is not None:
             self.Endi = Endi
         if self.Endi == "=":
@@ -459,8 +628,12 @@ class PLYIO(BaseIO):
                 self.WriteNodesBinary(fp)
                 self.WriteElemsBinary(fp)
             
-    # Write the ply header
     def WriteHeader(self,fp,asASCII):
+        '''Internal function to write the header of a ply file.
+        
+        fp - open file pointer
+        asASCII - if True export data as ASCII instead of binary.
+        '''
         propliststring = ""
         for plbl in self.PropTypes.Ltype:
             if not plbl == "N":
@@ -484,16 +657,19 @@ class PLYIO(BaseIO):
         fp.write(header.encode())
 
     def WriteArray(self,fp,Array):
+        '''Internal function to write an array in ASCII format'''
         for line in Array:
             asciiline = " ".join([str(el) for el in line]) + "\n"
             fp.write(asciiline.encode())
         
     def WriteNodesASCII(self,fp): 
+        '''Internal function to write the Nodes in ASCII format'''
         NoNLabs=self.PropTypes.Ltype[1:]
         TmpNodes=self.Nodes.Mat[NoNLabs].copy()
         self.WriteArray(fp,TmpNodes)
         
     def WriteElemsASCII(self,fp):    
+        '''Internal function to write the Elements in ASCII format'''
         tmpdtype = self.Elems.Mat.dtype.descr
         tmpdtype[0]=('N', self.Endi+'u1')
         TmpElems = self.Elems.Mat.astype(tmpdtype)
@@ -501,6 +677,7 @@ class PLYIO(BaseIO):
         self.WriteArray(fp,TmpElems)
         
     def WriteNodesBinary(self,fp):
+        '''Internal function to write the Nodes in binary format'''
         NoNLabs = self.PropTypes.Ltype[1:]
         tmpdtype = self.Nodes.Mat.dtype.descr[1:]
         try:
@@ -510,6 +687,7 @@ class PLYIO(BaseIO):
         TmpNodes.tofile(fp)
         
     def WriteElemsBinary(self,fp):
+        '''Internal function to write the Elements in binary format'''
         tmpdtype = self.Elems.Mat.dtype.descr
         tmpdtype[0]=('N', 'u1')
         TmpElems =self.Elems.Mat.astype(tmpdtype)
@@ -519,8 +697,22 @@ class PLYIO(BaseIO):
 # Class for VTU I/O        
 class VTUIO(BaseIO):
     def __init__(self):
+        '''Class to export data in VTU format (importing not implemented).
+
+        The attribute self.VecLabs contains a list of the form ['Name',[labs]],
+        where Name is a string that identifies a field and [labs] is a list that
+        contains all the labels that makeup that field, in order.
+        For example: ['displacement',['dx','dy','dz']]
+
+        TODO: Maybe it would work better to ust the vtk module.
+        '''
+
         BaseIO.__init__(self)
-        self.VecLabs=[]
+        self.VecLabs=[] # list of lists. Each item of VecLabs contains a list of the
+                        # form ['Name',[labs]], where Name is a string that identifies
+                        # a field and [labs] is a list that contains all the labels that
+                        # makeup that field, in order.
+                        #   For example: ['displacement',['dx','dy','dz']]
 
     def GetNodesString(self,Labs):
         string=str()
@@ -545,6 +737,12 @@ class VTUIO(BaseIO):
     ## -- WRITE VTU OPERATIONS -- ##
     
     def SaveFile(self,vtufile,VecLabs=[],Endi=None):
+        '''Save mesh to vtu file.
+        
+        vtufile - path to output vtufile
+        VecLabs[[]] - list of grouped nodal that form higher dimension fields (see VTUIO doc for more)
+        Endi[None] - set the endienness of the binary output
+        '''
         if Endi is not None:
             self.Endi = Endi
         if self.Endi == "=":
@@ -556,7 +754,7 @@ class VTUIO(BaseIO):
         self.SetElems()
         
         if self.VecLabs==[]:
-            print("VecLabs is empty. Only geometry exported. Do VTUIO.VecLabs.append(['Name',[labs]]) to add data")
+            print("VecLabs is empty. Only geometry exported. Do self.VecLabs.append(['Name',[labs]]) to add data")
         
         self.SetNodeData()
         self.SetElemData()
@@ -565,6 +763,7 @@ class VTUIO(BaseIO):
             self.doc.writexml(fp, newl='\n')
     
     def SetPiece(self):
+        '''Internal function to generate vtu data structure'''
         # Root element
         self.doc = xml.dom.minidom.Document()
         root_element = self.doc.createElementNS("VTK", "VTKFile")
@@ -582,6 +781,7 @@ class VTUIO(BaseIO):
         unstructuredGrid.appendChild(self.piece)    
     
     def SetNodes(self):
+        '''Internal function to generate vtu data structure'''
         ### Points ####
         points = self.doc.createElementNS("VTK", "Points")
         self.piece.appendChild(points)
@@ -598,6 +798,7 @@ class VTUIO(BaseIO):
         point_coords.appendChild(point_coords_data)
     
     def SetElems(self):
+        '''Internal function to generate vtu data structure'''
         #### Cells ####
         cells =self.doc.createElementNS("VTK", "Cells")
         self.piece.appendChild(cells)
@@ -630,6 +831,7 @@ class VTUIO(BaseIO):
         cell_types.appendChild(types)
 
     def SetNodeData(self):
+        '''Internal function to generate vtu data structure'''
         point_data = self.doc.createElementNS("VTK", "PointData")
         self.piece.appendChild(point_data)
         
@@ -649,6 +851,7 @@ class VTUIO(BaseIO):
             forces.appendChild(forceData)
 
     def SetElemData(self):
+        '''Internal function to generate vtu data structure'''
         cell_data = self.doc.createElementNS("VTK", "CellData")
         self.piece.appendChild(cell_data)
         
@@ -656,6 +859,11 @@ class VTUIO(BaseIO):
 # Class for FEBio I/O
 class FEBioIO(BaseIO):
     def __init__(self):
+        '''Class to export data in FEBio format (importing not implemented).
+
+        Special loading conditions and material properties are defined when
+        calling the SaveFile function.
+        '''
         BaseIO.__init__(self)
     
     ## -- WRITE FEBIO OPERATIONS -- ##
@@ -990,8 +1198,17 @@ class FEBioIO(BaseIO):
         linear = self.createChild(surface_load,"linear")
         self.addText(linear,"0")
       
-
     def SaveFile(self,febiofile,Endi=None,fibertype=0,prestrain=False,dispersion=False,kip=0.15833,load=-2E-2):
+        '''Save mesh to FEBio file.
+        
+        febiofile - path to output febiofile
+        Endi[None] - set the endienness of the binary output
+        fibertype[0] - type of fiber alignement. (see makefiberangles() doc for more)
+        prestrain[False] - include prestrain (requires Prestrain plugin)
+        dispersion[False] - include dispersion (required HDisp plugin)
+        kip[0.15833] - in-plane dispersion parameter (when dispersion=True)
+        load[-2E-2] - value of load pressure in MPa.
+        '''
         if Endi is not None:
             self.Endi = Endi
         if self.Endi == "=":
@@ -1065,11 +1282,17 @@ def _Aux_RenderTriangles(picture,scale,NElems,NodesMat,EN):
 
 class MyMesh(object):
     def __init__(self,Nodes,Elems):
-        self.NNodes = Nodes.GetNNodes()
-        self.NElems = Elems.GetNElems()
-        self.Nodes  = Nodes
-        self.Elems  = Elems
-        self.IndxL = self.MakeIndexed()
+        '''
+        Class for mesh manipulation. Contains algorithms to compute Normals and Curvatures.
+
+        Nodes - CNodes object
+        Elements - CElements object
+        '''
+        self.NNodes = Nodes.GetNNodes() # Number of Nodes
+        self.NElems = Elems.GetNElems() # Number of Elements
+        self.Nodes  = Nodes # CNodes object
+        self.Elems  = Elems # CElements object
+        self.IndxL = self.MakeIndexed() # List that relates node number with node index (useful when node numbers are not their indexes in self.Nodes)
         
         # Neighbours in 1-Ring
         self.NN = np.empty(self.NNodes,dtype=object) # Nodes near Node (list of nodes that are 1 side away from node)
@@ -1080,39 +1303,48 @@ class MyMesh(object):
         
         # Sides in 1-Ring
         #self.Sides=np.zeros(self.NSides,dtype=[('ni','i4'),('nf','i4'),('ei','i4'),('ef','i4'),('beta','f8')])
-        self.NS = np.empty(self.NNodes,dtype=object)
-        self.ES = np.zeros((self.NElems,3),dtype='i4')
+        self.NS = np.empty(self.NNodes,dtype=object) # Sides per Node
+        self.ES = np.zeros((self.NElems,3),dtype='i4') # Sides per Element
         self.ComputeSides()
         
         # Check if nodes, elements or sides are in boundary of mesh
-        self.NIsB = np.zeros(self.NNodes,dtype=np.bool)
-        self.EIsB = np.zeros(self.NElems,dtype=np.bool)
-        self.SIsB = np.zeros(self.NSides,dtype=np.bool)
+        self.NIsB = np.zeros(self.NNodes,dtype=np.bool) # Is Boundary per Node
+        self.EIsB = np.zeros(self.NElems,dtype=np.bool) # Is Boundary per Element
+        self.SIsB = np.zeros(self.NSides,dtype=np.bool) # Is Boundary per Side
         self.ComputeBoundary()
 
     def MakeIndexed(self):
+        '''Internal function to sort the node numbers'''
         self.NewElemsMat=np.zeros((self.NElems,3),dtype='i4')
         # "Allocate empty structured array"
         IndxL=np.empty(self.NNodes,dtype=[('N','i4'),('I','i4')])
         
         # "Fill N and I"
-        IndxL['N'] = self.Nodes.Mat['N']
-        IndxL['I'] = np.arange(self.NNodes)
+        IndxL['N'] = self.Nodes.Mat['N'] # Original node numbering
+        IndxL['I'] = np.arange(self.NNodes) # Sorted sequential index
         
         # Sort
         IndxL.sort(order='N')
         
         # Add Ip1, Ip2 and Ip3
-        idxp1 = IndxL['N'].searchsorted(self.Elems.Mat['p1'])
-        idxp2 = IndxL['N'].searchsorted(self.Elems.Mat['p2'])
-        idxp3 = IndxL['N'].searchsorted(self.Elems.Mat['p3'])
-        self.NewElemsMat[:,0] = IndxL['I'][idxp1]
-        self.NewElemsMat[:,1] = IndxL['I'][idxp2]
-        self.NewElemsMat[:,2] = IndxL['I'][idxp3]
+        idxp1 = IndxL['N'].searchsorted(self.Elems.Mat['p1']) # Find indexes of p1 of all elements
+        idxp2 = IndxL['N'].searchsorted(self.Elems.Mat['p2']) # Find indexes of p2 of all elements
+        idxp3 = IndxL['N'].searchsorted(self.Elems.Mat['p3']) # Find indexes of p3 of all elements
+        self.NewElemsMat[:,0] = IndxL['I'][idxp1] # Setup First node in Index numbering
+        self.NewElemsMat[:,1] = IndxL['I'][idxp2] # Setup Second node in Index numbering
+        self.NewElemsMat[:,2] = IndxL['I'][idxp3] # Setup Third node in Index numbering
 
         return IndxL
     
     def ComputeNeighbours(self):
+        '''
+        Internal function to compute all the arrays with neighbours in 1-Ring.
+            self.NN - Nodes near Node (list of nodes that are 1 side away from node)
+            self.NE - Elements near Node (list of elements touching the node)
+            self.EN - Nodes near Element (list of nodes touching the element)
+            self.EE - Elements near Element (list of elements touching the nodes of the element)
+        '''
+
         # Reset
         for i in range(self.NNodes):
             self.NE[i]=[]
@@ -1140,6 +1372,21 @@ class MyMesh(object):
                     if ene not in self.EE[e]: self.EE[e].append(ene)
 
     def ComputeSides(self):
+        '''Internal function to compute sides of triangles of the mesh.
+
+        self.Sides - dtype:
+            'ni' - first node
+            'nf' - second node
+            'ei' - first element
+            'ef' - second element
+            'beta' - dihedral angles
+            'nEE' - side length
+            'S' - shape operator
+
+        self.NS - Sides per Node
+        self.ES - Sides per Element
+        '''
+
         # Reset
         for i in range(self.NNodes):
             self.NS[i]=[]
@@ -1179,6 +1426,7 @@ class MyMesh(object):
                     raise ValueError("Mesh in not 2-Manifold")
                     
     def FindSide(self,n1,n2):
+        '''Find side number that connects n1 and n2'''
         if n1==n2: raise ValueError("Cannot find side of same node")
         for val in self.NS[n1]:
             if val in self.NS[n2]:
@@ -1186,20 +1434,33 @@ class MyMesh(object):
         raise ValueError("Cannot find side for node pair")
             
     def ComputeBoundary(self):
-        # Compute EIsB and NIsB
+        '''Compute boundary arrays.
+
+        self.NIsB - Is Boundary per Node
+        self.EIsB - Is Boundary per Element
+        self.SIsB - Is Boundary per Side
+        '''
+
         for si in range(self.NSides):
             ni,nf,ei,ef = [self.Sides[si][lab] for lab in ['ni','nf','ei','ef']]
-            if ef==-1:
+            if ef==-1: # If the side only has one triangle, then it is at a boundary
                 self.NIsB[ni]=True
                 self.NIsB[nf]=True
                 self.EIsB[ei]=True
                 self.SIsB[si]=True
                 
     def ComputeNormals(self,mode=0):
-        #Mode: Type of Nodal normal computation 
-        #  0-Simple Average
-        #  1-Weighted by Area
-        #  2-Weighted by Angle
+        ''' Compute normals of the mesh. Normals are computed from 
+        averaging element normals. Averaging can be weighted by the
+        area or the angle of the element that originated it.
+
+        Mode - Type of Nodal normal computation 
+            0-Simple Average
+            1-Weighted by Area
+            2-Weighted by Angle
+        '''
+
+        # local function that determines the weight based on mode
         def mymode(e,nei):
             if mode==0:
                 return 1.0
@@ -1208,10 +1469,10 @@ class MyMesh(object):
             elif mode==2:
                 return self.EAngs[e,nei]
 
-        self.ENorms = np.empty((self.NElems,3),dtype='f8') #nx,ny,nz
-        self.EAngs  = np.empty((self.NElems,3),dtype='f8') #a1,a2,a3
-        self.EAreas = np.empty(self.NElems,dtype='f8') #A
-        self.NNorms = np.zeros((self.NNodes,3),dtype='f8') #nx,ny,nz
+        self.ENorms = np.empty((self.NElems,3),dtype='f8') # Element Normals - nx,ny,nz
+        self.EAngs  = np.empty((self.NElems,3),dtype='f8') # Element Angles - a1,a2,a3
+        self.EAreas = np.empty(self.NElems,dtype='f8') # Element Areas - A
+        self.NNorms = np.zeros((self.NNodes,3),dtype='f8') # Node Normals - nx,ny,nz
         
         for e in range(self.NElems):
             #Triangle Points and Vectors
@@ -1243,25 +1504,38 @@ class MyMesh(object):
             self.NNorms[n,:]/=np.linalg.norm(self.NNorms[n,:]) # Normalize Node Normals
 
     def GetCentroid(self,e):
+        '''Get centroid of element'''
         C=np.zeros(3)
         for P in self.Nodes.Mat[self.EN[e]]:
             C+=[P['x'],P['y'],P['z']]
         return C/3.0    
 
     def InterceptVerticalSlice(self,P1,P2):
-        # Get line resulting from slicing the surface with a vertical plane that passes through P1 and P2
+        '''Get line resulting from slicing the surface with a vertical plane that passes through P1 and P2
+
+        P1 - vector/list/tuple with x and y coordinates of first point
+        P2 - vector/list/tuple with x and y coordinates of second point
+        '''
 
         # Get Plane Equation
         a,b = P1[1]-P2[1],P2[0]-P1[0]
         d=a*P1[0]+b*P1[1]
         def plane(p):
+            '''Distance of point p to plane. Sign reflects
+            which side of the plane the point is.'''
             return a*p[0]+b*p[1]-d
         def compare(pi,pf):
+            ''' Find position of plane with respect to the line that
+            connects pi to pf. Returns tha value of alpha, where alpha
+            is the distance between the intersecting point and pi, normalized
+            by the distance between pi and pf. Alpha is 0 if the plane is at pi,
+            1 if the plane is at pf, [0,1] if the plane is between these two
+            points and None if the plane is not between the two points.'''
             pli=plane(pi)
-            if pli==0.0: return 0.0
+            if pli==0.0: return 0.0 # Plane cuts at pi
             plf=plane(pf)
-            if plf==0.0: return 1.0
-            if pli*plf > 0.0: return None
+            if plf==0.0: return 1.0 # Plane cuts at pf
+            if pli*plf > 0.0: return None  # Plane cuts outside pi-pf
             return pli/(pli-plf)
 
         # Find Starting edge
@@ -1269,11 +1543,11 @@ class MyMesh(object):
         for si in range(self.NSides):
             if not self.SIsB[si]:
                 continue
-            ni,nf,ei,ef = [self.Sides[si][lab] for lab in ['ni','nf','ei','ef']]
-            pi,pf = self.Nodes.GetNumpyPoints([ni,nf])
+            ni,nf,ei,ef = [self.Sides[si][lab] for lab in ['ni','nf','ei','ef']] # Get nodes and elements of the side
             #pi,pf = [(P['x'],P['y']) for P in [self.Nodes.Mat[nx] for nx in [ni,nf]]]
+            pi,pf = self.Nodes.GetNumpyPoints([ni,nf])
             alpha = compare(pi,pf)
-            if alpha is not None:
+            if alpha is not None: # Plane does not cut outside pi-pf
                 SideStart=si
                 break
         
@@ -1283,9 +1557,12 @@ class MyMesh(object):
         
         # Get interpolated point
         def GetInterpPoint(side):
-            ni,nf = [self.Sides[side][lab] for lab in ['ni','nf']]
-            pi,pf = self.Nodes.GetNumpyPoints([ni,nf])
-            alpha = compare(pi,pf)
+            '''Function to get interpolated point of a side.
+            Returns None if plane does not cut that side and 
+            returns the interception point otherwise.'''
+            ni,nf = [self.Sides[side][lab] for lab in ['ni','nf']] # Get nodes of the side
+            pi,pf = self.Nodes.GetNumpyPoints([ni,nf]) # Get node coordinates
+            alpha = compare(pi,pf) # compute plane position
             if alpha is None:
                 return None
             else:
@@ -1293,29 +1570,34 @@ class MyMesh(object):
 
 
         # March along elements that are cut by the slice
-        cside = SideStart
-        pelem = -1 # previous element
-        SlicePoints = [GetInterpPoint(cside)]
-        notOnEdge = True
+        cside = SideStart # current side
+        pelem = -1 # previous element (first "previous" element of the side is the one outside the mesh [-1])
+        SlicePoints = [GetInterpPoint(cside)] # list of point on the slice
+        notOnEdge = True # Will march along the mesh until it finds an edge
         while notOnEdge:
-            ei,ef = [self.Sides[cside][lab] for lab in ['ei','ef']]
-            celem = ef if ei==pelem else ei
-            for sd in self.ES[celem,:]:
-                if sd==cside:
+            ei,ef = [self.Sides[cside][lab] for lab in ['ei','ef']] # Get elements of the side
+            celem = ef if ei==pelem else ei # current element (the one connecting to the current side that is not the previous element)
+            for sd in self.ES[celem,:]: # loop through all the element sides
+                if sd==cside: # skip current side
                     continue
-                P=GetInterpPoint(sd)
-                if P is not None:
+                P=GetInterpPoint(sd) # get interception of the side with the plane
+                if P is not None: # If the plane is cutting the side
                     SlicePoints.append(P)
                     cside=sd
                     pelem=celem
                     break
             
-            if self.SIsB[cside]:
+            if self.SIsB[cside]: # check if current side (the new one) is on the edge
                 notOnEdge=False
 
         return SlicePoints
 
     def MakePicture(self,resolution=(512,512),simulate=False):
+        '''Render an image based on the mesh.
+
+        resolution[(512,512)] - tuple with the dimensions of the image
+        simulate[False] - set to true to skip rendering for faster testing
+        '''
         picture=np.zeros(resolution)
 
         maxx=np.amax(self.Nodes.Mat['x'])
@@ -1323,6 +1605,7 @@ class MyMesh(object):
         resx,resy = resolution
         scale=max(maxx/resx,maxy/resy) #micron/pixel
         
+        # Make arrays in basic numpy format to speed up the rendering with numba
         Nodes_temp = np.array([self.Nodes.Mat['x'],self.Nodes.Mat['y'],self.Nodes.Mat['z']]).T
         EN_temp=np.reshape(np.concatenate(np.array(self.EN)),(-1,3))
         if not simulate: picture = _Aux_RenderTriangles(picture,scale,self.NElems,Nodes_temp,EN_temp)
@@ -1331,7 +1614,22 @@ class MyMesh(object):
         return imgpix,scale
 
     def ComputeCurvatures(self):
-        # Run ComputeNormals() before this function 
+        '''Function to compute curvatures of the mesh. Requires computing the normals beforehand.
+        Results are stored in internal vectors as follows:
+            self.NHv - Mean Curvature Normal Vector
+            self.NH - Mean Curvature
+            self.NK -  Gaussian Curvature
+            self.NSdihe - Structure Tensor (from dihedral)
+            self.NSdiheS - Smoothed Structure Tensor (from dihedral) [smoothing later]
+            self.NHdihe -  Mean Curvature (from dihedral)
+        '''
+
+
+        # Check if Normals were ran
+        if not hasattr(self, 'EAngs'):
+            raise RuntimeError("Please run ComputeNormals() before running ComputeCurvatures()")
+            
+
         self.NAmix  = np.zeros(self.NNodes,dtype='f8') #A
         self.NARing = np.zeros(self.NNodes,dtype='f8') #A
         self.NAreaG = np.empty(self.NNodes,dtype='f8') #A
@@ -1400,8 +1698,6 @@ class MyMesh(object):
                 self.Sides['nEE'][si] = nEE
                 self.Sides['S'][si] = S
                 
-                
-
         #Final Nodal Operations
         for n in range(self.NNodes):
             self.NHv[n]/=(4*self.NAmix[n]) # Mean Curvature Normal Vector
@@ -1417,17 +1713,35 @@ class MyMesh(object):
             
     @staticmethod
     def IndividualCurvPrincipalDirections(ShapeOperator,NHv):
-        minmax=np.array([[1,2],[0,2],[0,1]])
-        eigs,eigvs= np.linalg.eigh(ShapeOperator)
-        imaxC=np.argmax(np.abs(eigs))
-        izero=np.argmin(np.abs(eigs))
-        imin,imax=minmax[izero]
+        '''Function to compute principal directions from Shape Operator. It is
+        a static function and independent of the actual mesh. Can be used externally.
+
+        Input:
+            ShapeOperator - 3x3 array of the Shape Operator
+            NHv - array with Mean Curvature Normal Vector 
+        Output:
+            Vmax - Principal direction vector of principal curvature with maximum magnitude
+            Vmin - Principal direction vector of principal curvature with minimum magnitude
+            Vnor - Normal of the surface as given by the eigenvector of with zero eigenvalue (not as good)
+            kmax - Principal curvature with maximum magnitude
+            kmin - Principal curvature with minimum magnitude
+            Nktype - type of curvature point (0- both positive, 1- both negative, 2- hyperbolic paraboloid)
+            alph - angle of direction of zero curvature (or min mag) from max princ curv direction
+            VMM1 - first direction of zero curvature (or min mag)
+            VMM2 - second direction of zero curvature (or min mag)
+        '''
+
+        minmax=np.array([[1,2],[0,2],[0,1]]) # map position of zero eval to intexes of minimum and maximum eval
+        eigs,eigvs= np.linalg.eigh(ShapeOperator) # compute eignevalues (eval) and eigenvectors (evec)
+        imaxC=np.argmax(np.abs(eigs)) # compute index of maximum eignevalue magnitude
+        izero=np.argmin(np.abs(eigs)) # compute index of zero eigenvalue (for the normal)
+        imin,imax=minmax[izero] # get indexes of min and max eval
         
-        if imaxC==imin:
+        if imaxC==imin: # minimum eval has the maximum magnitude
             Vmax=eigvs[:,imin]
             Vmin=np.cross(Vmax,NHv)
             Vmin/=np.linalg.norm(Vmin)
-        else:
+        else: # maximum eval has maximum magnitude
             Vmin=eigvs[:,imax]
             Vmax=np.cross(Vmin,NHv)
             Vmax/=np.linalg.norm(Vmax)
@@ -1437,23 +1751,23 @@ class MyMesh(object):
         # self.NMinCd[n] = Vmin
         # self.NNorCd[n] = eigvs[:,izero]
         
-        kmin,kmax=eigs[[imin,imax]]
+        kmin,kmax=eigs[[imin,imax]] # curvature values
         # self.Nkmin[n]=kmin
         # self.Nkmax[n]=kmax
         # self.NH[n] == (kmin+kmax)/2
         # self.NK[n] == (kmin*kmax)
         
-        if kmin>0:
+        if kmin>0: # all evals are positive
             Nktype=0
             alph=np.pi/2
             VMM1=Vmin
             VMM2=Vmin
-        elif kmax<0:
+        elif kmax<0: # all evals are negative
             Nktype=1
             alph=0.0
             VMM1=Vmax
             VMM2=Vmax
-        else: #kmin<0 and kmax>0
+        else: #kmin<0 and kmax>0 - Hyperbolic paraboloid
             Nktype=2
             alph = np.arctan2(np.sqrt(kmax),np.sqrt(-kmin))
             # print(alph*180/3.1415)
@@ -1465,6 +1779,8 @@ class MyMesh(object):
         return Vmax,Vmin,Vnor,kmax,kmin,Nktype,alph,VMM1,VMM2
 
     def ComputeCurvaturePrincipalDirections(self,usesmooth=True):
+        '''Compute principal direction of curvature and get also directions of zero curvature.'''
+
         self.NMaxCd = np.zeros((self.NNodes,3),dtype='f8') #PD of max curvature (from diheadral)
         self.NMinCd = np.zeros((self.NNodes,3),dtype='f8') #PD of min curvature (from diheadral)
         self.NNorCd = np.zeros((self.NNodes,3),dtype='f8') #PD of normal (from diheadral)
@@ -1498,6 +1814,7 @@ class MyMesh(object):
             self.NMM2[n]=VMM2
             
     def SmoothCurvatures(self,N=1):
+        '''Smooth the curvatures my averaging the shape operators'''
         for _ in range(N): #Smooth N times
             source=self.NSdiheS.copy()
             for n in range(self.NNodes):
@@ -1516,7 +1833,16 @@ class MyMesh(object):
     
     def ReadjustMinCurvDirections(self,Director_Vector=None,Auto_Director_Vector_Type=0,Make_Zero_Boundary=True,Aux_Director_Vector=None,Director_Vector_List=None):
         '''
-            Function to readjust the vectors of minimum curvature.
+            Function to readjust the vectors of minimum curvature. 
+
+            If first finds which of the two directions of zero curvature is more aligned with the director vector.
+            The director vector can be: a) given directly by passing it through "Director_Vector"; b) computed
+            automatically by setting the algorithm in "Auto_Director_Vector_Type"; or c) computed based on
+            "Director_Vector_List" which contains points and directions.
+
+            The sign of the chosed direction of zero curvature vector is then adapted to be in the same direction as
+            the auxiliary director vector. This can be set directly through "Aux_Director_Vector" or assumed to be the same
+            as the director vector.
 
             Input:
                 Director_Vector (default:None) -- Vector that determines the direction 
@@ -1538,14 +1864,14 @@ class MyMesh(object):
         Compute_Local_Average=False
         Flag_Aux_Director_Vector=False
         
-        if Aux_Director_Vector is not None:
+        if Aux_Director_Vector is not None: # Aux Director Vector is external
             Aux_Director_Vector=np.array(Aux_Director_Vector)
             Flag_Aux_Director_Vector=True
 
-        if Director_Vector is not None:
+        if Director_Vector is not None: # Convert Director Vector
             Director_Vector=np.array(Director_Vector)
 
-        elif Director_Vector_List is not None:
+        elif Director_Vector_List is not None: # Set-up arrays for List of Director Vectors
             N_dpoints = len(Director_Vector_List)
             DirVecPoints = np.zeros((N_dpoints,3),dtype='f8')
             DirVecVectors = np.zeros((N_dpoints,3),dtype='f8')
@@ -1568,9 +1894,10 @@ class MyMesh(object):
 
         VTemp=np.zeros_like(self.NMM1)
         for n in range(self.NNodes): # Go node-by-node to fix vector
-            if not (self.NIsB[n] and Make_Zero_Boundary): #Make boundary vectors 0 if desired
+            if not (self.NIsB[n] and Make_Zero_Boundary): # Make boundary vectors 0 if desired
                 
-                if Compute_Local_Average: #Get Local Director Vector
+                # Compute special automatic director vector
+                if Compute_Local_Average:
                     Node_set=set()
                     if Auto_Director_Vector_Type in [4,5,6,7]:
                         # Compute N2+N1+n
@@ -1595,6 +1922,7 @@ class MyMesh(object):
                         Director_Vector+=self.NMM1[ns]
                     Director_Vector/=np.linalg.norm(Director_Vector)
 
+                # Set director vector from list
                 if Director_Vector_List is not None:
                     # Find closest 3 points (p1,p2,p3) and get director vector as v1 + v2*d1/d2 + v3*d1/d3
                     P=self.Nodes.Mat[n]
@@ -1603,23 +1931,10 @@ class MyMesh(object):
                     Isort = np.argsort(Distances)
                     d1=Distances[Isort[0]]
                     Director_Vector = DirVecVectors[Isort[0],:].copy()
-
-                    # doprint = Distances[3]<50
-
-                    # if doprint:
-                    #     print("DirVecVectors[Isort[0],:]",DirVecVectors[Isort[0],:])
                     for i in range(1,min(N_dpoints,3)):
-                        # if doprint:
-                        #     print("i",i,DirVecVectors[Isort[i],:],d1/Distances[Isort[i]])
                         Director_Vector += DirVecVectors[Isort[i],:] * d1/Distances[Isort[i]]
                     Director_Vector/=np.linalg.norm(Director_Vector)
-                    # if doprint:
-                    #     print("Pos=",Pos)
-                    #     #print("Distances=",Distances)
-                    #     print("d1=",d1)
-                    #     print("d2=",Distances[Isort[1]])
-                    #     print("d3=",Distances[Isort[2]])
-                    #     print("Director_Vector=",Director_Vector)
+
                     
                 Va=self.NMM1[n] # Get vector of min magnitude
                 dot_Va_DirVec=np.dot(Director_Vector,Va) # Got dot product with director vector
@@ -1644,6 +1959,10 @@ class MyMesh(object):
         self.NMinMag=VTemp
 
     def FlipMinCurvDirections(self,Aux_Director_Vector=None):
+        '''
+        Flip to the other direction of zero curvature based on current direction of zero curvature.
+        Useful for plotting both streamlines.
+        '''
         VTemp=np.zeros_like(self.NMM1)
         isnotzero= np.logical_not(np.all(self.NMinMag == VTemp,axis=1))
         isMM1 = np.logical_and(isnotzero,np.all(self.NMinMag == self.NMM1,axis=1))
@@ -1660,21 +1979,25 @@ class MyMesh(object):
                     if dot_Va_AuxVec<0: Va*=-1 #Set vector to correct direction
                     VTemp[n]=Va # Fix direction 
 
-
-
-
-
         self.NMinMag=VTemp
 
     def GetAllFieldsForInterpolation(self):
         return [plbl for plbl in self.Nodes.PropTypes.Ltype if not plbl == 'N']
 
     def InterpolateFieldForPoint(self,point,field_lbl,DoZ=False):
-        #ret_labels=[]
+        '''
+        Given a point x,y(,z) finds the closest point in mesh surface and computes
+        the interpolated value of the requested field at that position.
+
+        point - x,y(,z) coordinates to interpolate for.
+        field_lbl - label of field to interpolate. If 'all' then all fields present are interpolated.
+        DoZ[False] - If true also checks the z coordinate (useful is mesh is not unique in x,y)
+
+        '''
+
         ret_values=[]
 
         # Make label list 
-
         if type(field_lbl) == type([]):
             fieldLabels = field_lbl
         elif field_lbl.lower() =='all': # Get all data
@@ -1696,16 +2019,7 @@ class MyMesh(object):
     @staticmethod
     def _getBaricentricCoordinates(point,P1,P2,P3):
         return _Aux_getBaricentricCoordinates(point,P1,P2,P3)
-        # def mycross(r1,r2):
-        #     return r1[0]*r2[1]-r1[1]*r2[0]
-        # r12 = P2-P1
-        # r23 = P3-P2
-        # r3p = point-P3
-        # r2p = point-P2
-        # iA = 1/mycross(r12,r23)    
-        # l1 = mycross(r23,r3p)*iA   
-        # l3 = mycross(r12,r2p)*iA
-        # return l1,1-l1-l3,l3
+
 
     def _quickInterp(self,field_lbl,nodes,baris):
         val=0.0
@@ -1751,26 +2065,3 @@ class MyMesh(object):
                 if (l1>=0 and l2>=0 and l3>=0 and l1<=1 and l2<=1 and l3<=1): #Is inside Triangle
                     return nodes,[l1,l2,l3]
                          
-
-# def LoadFile(self,FilePath):
-    # path,ext = os.path.splitext(FilePath)
-    # if ext == ".ply":
-        # Ply = MAMIO.PLYIO(FilePath)
-        # Nodes,Elems = Ply.ExportMesh()    
-        # MyM = MAMIO.MyMesh(Nodes,Elems)
-        # del Ply
-    # else:
-        # raise ValueError("Loading for that filetype does not exist ("+ext+")"
-
-            
-        
-# if __name__ == "__main__":
-    # print(" No testing model provided")
-    # # fn="Tests/CSV3D/test"
-    # # MakeCSVMesh(fn+".csv",ColFile=fn+".png",Expfile=fn+".ply")
-    
-    
-    
-    
-    
-    
