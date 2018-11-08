@@ -1,11 +1,23 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
-from future import standard_library
-standard_library.install_aliases()
 from builtins import object
 import tkinter as tk
 from PIL import Image, ImageTk, ImageDraw
+
+'''
+This module loads an image and allows the user to paint the bone areas
+and the membrane areas. The result is saved when the user presses "Show".
+
+The result in an image that is the same resolution as the original but with
+the markings of the user only.
+
+The original intent of this was to specify what was bone and what was membrane
+in an image of a bulge test such that the 3D data of the bone could be used to
+fit the bone height between different pressure values and then the membrane data
+could be used to build the 3D of the membrane as it is bulged.
+
+The program works but I never really used it in the end.
+'''
+
+
 
 # Centered Circle Functions
 def _create_circle(self, x, y, r, width=0, **kwargs):
@@ -129,4 +141,5 @@ class ImgEditor(object):
             self.Instructions.pop()
 
 if __name__ == "__main__":
-    ge=ImgEditor("Tests/Membrane.png")
+
+    ge=ImgEditor("ImageEditorExample.png")
