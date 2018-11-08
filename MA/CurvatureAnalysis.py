@@ -385,7 +385,7 @@ def InterpolatePropertiesFromPLY(plyFile_Curvs,csvFile_PointsData,PointsList):
     Data.to_csv(csvFile_PointsData,index=False)
 
 def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults,PointsDF,BaseAngleFiles=None):
-    isRight,isKasza = GetExtraInfo(DirectionalityBase)
+    isRight,isKasza = GetExtraInfo(DirectionalityBase) #pylint: disable=W0612
     
     Npoints=len(PointsDF)
     RESULTS = pd.DataFrame(index=range(Npoints),
@@ -420,7 +420,7 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults
         # Change below if you want to use Gradient instead of FFT
         Results = OAnalysis.ApplyFFT()
 
-        fig, axes = plt.subplots(3, 2, figsize=(8 , 12))
+        fig, axes = plt.subplots(3, 2, figsize=(8 , 12)) #pylint: disable=W0612
         axes[0,0].imshow(mpimg.imread(BaseAuxImage+".png"),cmap="Greys_r",)
         axes[0,0].set_axis_off()
         axes[0,0].set_title("Windowed Fiber Image")
@@ -605,7 +605,7 @@ def ComputeFitParameters(Base,FitObject,Force=False):
     tiffile =  Base + SUF_tiffile
     plyFile_Smooth = Base + SUF_plyFile_Smooth
     plyFile_RT = Base + SUF_plyFile_RT
-    isRight,isKasza = GetExtraInfo(Base)
+    isRight,isKasza = GetExtraInfo(Base) #pylint: disable=W0612
 
     if isRight: tiffile = flipIfNeeded(tiffile,Force=Force)
 
@@ -823,10 +823,10 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
                 plyFile_RT = Base + SUF_plyFile_RT
                 CutPoints = MakeLoadSlice(plyFile_RT,X=xval)
                 axs[0,ix].plot(CutPoints[:,1],CutPoints[:,2])
-            axs[0,ix].set_xlabel('Y ($\mu$m)')
-            axs[0,ix].text(0.5, 0.95, "X="+str(xval)+ " ($\mu$m)", transform=axs[0,ix].transAxes, va="top", ha="center")
+            axs[0,ix].set_xlabel('Y ($\\mu$m)')
+            axs[0,ix].text(0.5, 0.95, "X="+str(xval)+ " ($\\mu$m)", transform=axs[0,ix].transAxes, va="top", ha="center")
             #axs[0,ix].set_title("X="+str(xval)+ " ($\mu$m)")
-        axs[0,0].set_ylabel('Z ($\mu$m)')
+        axs[0,0].set_ylabel('Z ($\\mu$m)')
 
         # Y-cuts
         for iy,yval in enumerate(Ycuts):
@@ -836,10 +836,10 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
                 plyFile_RT = Base + SUF_plyFile_RT
                 CutPoints = MakeLoadSlice(plyFile_RT,Y=yval)
                 axs[1,iy].plot(CutPoints[:,0],CutPoints[:,2])
-            axs[1,iy].set_xlabel('X ($\mu$m)')
-            axs[1,iy].text(0.5, 0.95, "Y="+str(yval)+ " ($\mu$m)", transform=axs[1,iy].transAxes, va="top", ha="center")
+            axs[1,iy].set_xlabel('X ($\\mu$m)')
+            axs[1,iy].text(0.5, 0.95, "Y="+str(yval)+ " ($\\mu$m)", transform=axs[1,iy].transAxes, va="top", ha="center")
             #axs[1,iy].set_title("Y="+str(xval)+ " ($\mu$m)")
-        axs[1,0].set_ylabel('Z ($\mu$m)')
+        axs[1,0].set_ylabel('Z ($\\mu$m)')
         #fig.suptitle("Profile of membranes after Cut")
         #plt.show()
         plt.tight_layout()
@@ -931,7 +931,7 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
 
     if "B" in MakePlots:  # Y vs Absolute Fiber Angle
         MAFP.regression_figure(AllData,"Y_T","AVM_flat",line45=False,
-            xlabel="Y coordinate of point ($\mu m$)",
+            xlabel="Y coordinate of point ($\\mu m$)",
             ylabel="Absolute angle of fiber direction (deg)",
             title= "Fiber direction as a function of Y.",
             xlims=[200,1200],xstep=200,
@@ -941,7 +941,7 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
 
     if "C" in MakePlots:  # Y vs Absolute ZC Angle
         MAFP.regression_figure(AllData,"Y_T","ZeroC2_flat",line45=False,
-            xlabel="Y coordinate of point ($\mu m$)",
+            xlabel="Y coordinate of point ($\\mu m$)",
             ylabel="Absolute angle of zero curvature direction (deg)",
             title= "Zero Curvature direction as a function of Y.",
             xlims=[200,1200],xstep=200,
@@ -951,7 +951,7 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
 
     if "D" in MakePlots:  # Y vs CSDEV
         MAFP.regression_figure(AllData,"Y_T","CircSTDV",line45=False,
-            xlabel="Y coordinate of point ($\mu m$)",
+            xlabel="Y coordinate of point ($\\mu m$)",
             ylabel="Circular Standard Deviation (deg)",
             title= "Dispersion as a function of Y.",
             xlims=[200,1200],xstep=200,
@@ -996,12 +996,12 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
 
         MAFP.polar_figure(Angles,Rsquareds,[maxa,maxr],
             savepath=PlotsBase+"Pol_RSqVsAngle.pdf",
-            xlabel="Angle",ylabel="$\qquad\qquad R^2$",
+            xlabel="Angle",ylabel="$\\qquad\\qquad R^2$",
             ylims=[0,1])
 
         AllData["DirDist"]=ComputeRSqAng(maxa,Positions,FiberAngle,True)
         MAFP.regression_figure(AllData,"DirDist","AVM_flat",line45=False,
-            xlabel="Distance along direction of maximum fit ($\mu m$)",
+            xlabel="Distance along direction of maximum fit ($\\mu m$)",
             ylabel="Absolute angle of fiber direction (deg)",
             title= "Fiber direction as a function of Distance along dir.",
             xlims=[200,1200],xstep=200,
