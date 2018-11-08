@@ -9,7 +9,24 @@ import MA.ImageProcessing as MAIP
 import MA.Tools as MATL   
 from PIL import Image
     
+'''
+This module was originally created to convert a CSV file into a 3D file.
+It now also converts from a tiff image file and any 2D matrix.
+
+The precess is to assume that the 2D matrix is a representation of a 3D surface,
+where the x and y coordinates are obtained from the position of each element of the
+grid of numbers (column number for x and row number for y), potentially scaled by
+a horizontal scale factor. The z coordinate is assumed to be the value of each element,
+potentially scaled by a vertical scale factor.
+
+To convert a grayscale tiff image to a ply file do the following:
+    import MA.CSV3D as MA3D
+    MA3D.Make3DSurfaceFromHeightMapTiff(TiffFile,OFile=output_ply_file,NoZeros=True/False)
+'''
+
+
 def MakeNodes(npdata,Scale=(1.0,1.0,1.0)):
+    ''' Internal function to generate each node of the mesh'''
     Nr,Nc= np.shape(npdata)
     Nodes=np.zeros(Nr*Nc,dtype=[('x', np.float32), ('y', np.float32), ('z', np.float32)])
     x = np.linspace(0, (Nc-1), Nc, dtype=np.float32)
@@ -21,6 +38,7 @@ def MakeNodes(npdata,Scale=(1.0,1.0,1.0)):
     return Nodes
 
 def MakeColors(Mpix):
+    ''' Internal function to generate a color for each node of the mesh'''
     Nr,Nc = np.shape(Mpix)
     Colors=np.zeros(Nr,dtype=[('r', np.uint8), ('g', np.uint8), ('b', np.uint8), ('a', np.uint8)])
     Colors['r']=Mpix[:,0]
@@ -30,6 +48,7 @@ def MakeColors(Mpix):
     return Colors
    
 def MakeFaces(Nr,Nc):
+    ''' Internal function to generate each element of the mesh'''
     out = np.empty((Nr-1,Nc-1,2,3),dtype=int)
     r = np.arange(Nr*Nc).reshape(Nr,Nc)
     l1=r[:-1,:-1]
@@ -46,6 +65,7 @@ def MakeFaces(Nr,Nc):
     return out
 
 def ExportPlyBinary(Nodes,file,Faces=None,Colors=None):
+    ''' Internal function to export the mesh into a ply file'''
     LN=len(Nodes)
     LF=len(Faces)
     if Faces is None:
@@ -92,12 +112,22 @@ def ExportPlyBinary(Nodes,file,Faces=None,Colors=None):
         fp.write(faces.tostring())
 
 def MakeCSVMesh(CSVfile,verbose=True,**kwargs):
+    ''' Generates a ply mesh from a csv file '''
     if verbose: print("*Making CSV Mesh")
     if verbose: print("  - Reading .csv")
     npdata=MATL.getMatfromCSV(CSVfile)
     return MakeMPixMesh(npdata,verbose,**kwargs)
     
 def MakeMPixMesh(npdata,verbose=True,Scale=(1.0,1.0,1.0),ColFile=None,ColMat=None,Expfile=None,NoZeros=False):
+    ''' Generates a ply mesh from a 2D array
+    
+    verbose[True] - If True it prints out the progress of the algorithm
+    Scale[(1.0,1.0,1.0)] - Scaling factors in x,y and z directions. Final coordinates = scale * input coordinates (eg. pixel)
+    ColFile[None] - Image file with the colors to export in the ply file
+    ColMat[None] - Matrix with colors to export in the ply file (is overriden by ColFile)
+    Expfile[None] - Path to output ply file
+    NoZeros[False] - Do not generate mesh when pixel/element value is equal to zero.
+    '''
     if ColFile is not None:
         if verbose: print("  - Getting Image")
         Mpix=MAIP.GetRGBAImageMatrix(ColFile,Silent=not verbose).reshape(-1,4)
@@ -130,6 +160,12 @@ def MakeMPixMesh(npdata,verbose=True,Scale=(1.0,1.0,1.0),ColFile=None,ColMat=Non
     return Nodes,Faces,Colors    
     
 def Make3DSurfaceFromHeightMapTiff(File,OFile=None,NoZeros=False):
+    ''' Generates a ply mesh from a tiff file. Scale is extracted from tiff embedded information.
+    
+    File - Tiff file with the height information
+    OFile[None] - Path to output ply file
+    NoZeros[False] - Do not generate mesh when pixel/element value is equal to zero.
+    '''
     name,_ = os.path.splitext(File)
     if OFile is None:
         outfile=name+"_out.ply"
