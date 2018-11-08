@@ -10,6 +10,13 @@ import copy
 import MA.to_precision as tp  # From https://bitbucket.org/william_rusnack/to-precision
 
 
+'''
+This module was made to store functions and propoerties to generate
+nice plots in python for publication purposes.
+'''
+
+
+
 ############## Begin hack for markers in swarm ##############
 from matplotlib.axes._axes import Axes
 import matplotlib.markers as mmarkers
@@ -48,7 +55,7 @@ Axes.scatter = new_scatter
 ############## End hack. ##############
 
 
-
+# Standard Figure Properties
 def setupPaperStyle():
     sns.set_palette("deep")
     #plt.rcParams['text.usetex']=True
@@ -117,15 +124,20 @@ def setyaxis(ax,label=None,limits=None,step=None):
 
 
 
-# def new_box_plot_columns(df,categories_column,list_of_columns,legend_title,linewidth=0.7,order=None,**boxplotkwargs):
-#     columns = [categories_column] + list_of_columns
-#     newdf = df[columns].copy()
-#     data = newdf.melt(id_vars=[categories_column], var_name=legend_title, value_name="Value")
+'''
+The functions below allow the box plot and the swarm plot to have diffrent collumns of a pandas
+dataframe as different colors. The way pandas works, you can set the color to follow the value
+of a specific column. The typical example is, in a box plot with number of students per grade year,
+you can additionally seperate each grade year into male and female. Students cannot be both at the
+same time so it functions as a new category.
 
-#     g = sns.FacetGrid(data, col=categories_column,col_order=order,sharex=False)
-#     g.map(sns.boxplot,categories_column,"Value",legend_title,linewidth=linewidth)
-
-#     return plt.gcf(), np.array(g.axes.flat)
+What I wanted to acheive was something equivalent to showing the grades for Math, English and Science
+for each grade year. Since each student has all of these grades, they occupy different columns in the
+dataframe. To acheive the desired result, each student is split into 3 students one for each column, then
+their distinctive characteristic (course name) and their common characteristic (course grade) are both
+created as a new columns and now the box plot can plot "course grade" for each grade year, with an additional
+subdivision of the category in "course name".
+'''
 
 def box_plot_columns(df,categories_column,list_of_columns,legend_title,y_axis_title,linewidth=0.7,**boxplotkwargs):
     columns = [categories_column] + list_of_columns
@@ -139,7 +151,7 @@ def swarm_plot_columns(df,categories_column,list_of_columns,legend_title,y_axis_
     data = newdf.melt(id_vars=[categories_column], var_name=legend_title, value_name=y_axis_title)
     return sns.swarmplot(data=data, x=categories_column, y=y_axis_title, hue=legend_title, **swarmplotkwargs)
 
-## Full figures
+## Full figures - The functions bellow produce the full matplotlib figure
 
 def box_plot_figure(Data,categories_column,columns,column_labels=None,
     legend_title=" ",xlabel=None,ylabel=None,title=None,addHyperCyl=False,
