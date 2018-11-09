@@ -71,6 +71,16 @@ class GOFTests():
         self.Uniform = fit_object.Uniform
         self.gof_results = None
             
+
+    #[NEW] def UpdateData(self,Angles,Intensities,parameters,N_VonMises,Uniform):
+        # self.Angles = Angles
+        # self.Intensities = Intensities
+        # self.results = parameters
+        # self.N_VonMises = N_VonMises
+        # self.Uniform = Uniform
+
+
+
     # ---------------------------------------------------------------------- #
     # instance method: 
     def collect_gof_results( self ):

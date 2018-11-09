@@ -621,12 +621,15 @@ class Fitting(object):
         self.Angles = Angles
         self.Intensities = Intensities
         self.parameters = None
+        #[NEW] self.GOFTests = DF.GOFTests()
         self.gofresults = None
 
     def getParameters(self):
         return self.parameters
 
     def getGOF(self):
+        #[NEW] self.GOFTests.UpdateData(self.Angles,self.Intensities,self.parameters,self.N_VonMises,self.Uniform)
+        #[New] self.gofresults = self.GOFTests.computeGOF()
         self.computeGOF()
         return self.gofresults
 
