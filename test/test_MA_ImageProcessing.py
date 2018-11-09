@@ -77,8 +77,8 @@ class T(unittest.TestCase):
         # print("MAKE FIT...")
         FitObj = MAIP.ImageFit(MAIP.np2Image(RMat),InactiveThreshold=0)
         # FitObj = MAIP.ImageFit(ReferenceImage,InactiveThreshold=0)
-        R,T = FitObj.FitNewCoords(NewCoords,silent=True)
-        # R,T = FitObj.FitNewImage(FittingImage,silent=True)
+        R,T,DZavg = FitObj.FitNewCoords(NewCoords,silent=True)
+        # R,T,DZavg = FitObj.FitNewImage(FittingImage,silent=True)
 
         Rd=np.degrees(R)
         RMR = MAIP.CoordsObj.getRotationMatrix(NewRotation)
