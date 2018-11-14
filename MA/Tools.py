@@ -363,7 +363,7 @@ def ConvertToStructArray(array):
     Output: Numpy structured array
     '''
 
-    array=np.array(array)
+    array=np.array(array).copy() #Copy rewrites marray to make bytes properly ordered
     dty=array.dtype.name
     if 'str' in dty:
         raise ValueError("Undifined array data type (" + dty + "). Check to make sure all entries are of the same type and not strings")
