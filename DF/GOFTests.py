@@ -107,11 +107,11 @@ class GOFTests():
     # Initializer / Instance Attributes: 
     # 1. new initializer: 
     def __init__( self, Angles, Intensities, parameters, N_VonMises, Uniform ):
-        self.Angles = Angles
-        self.Intensities = Intensities
-        self.results = parameters
-        self.N_VonMises = N_VonMises
-        self.Uniform = Uniform
+        self.Angles = None
+        self.Intensities = None
+        self.results = None
+        self.N_VonMises = None
+        self.Uniform = None
         self.gofresults = None
     
     # 2. update the results: 

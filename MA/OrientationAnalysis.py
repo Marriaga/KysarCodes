@@ -632,7 +632,6 @@ class Fitting(object):
     def getGOF(self):
         self.GOFTests.UpdateData(self.Angles,self.Intensities,self.parameters,self.N_VonMises,self.Uniform)#[NEW] 
         self.gofresults = self.GOFTests.computeGOF()#[New] 
-        self.computeGOF()
         return self.gofresults
 
     # ======= #
