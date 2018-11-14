@@ -994,7 +994,7 @@ class FEBioIO(BaseIO):
             solidf.setAttribute("type", "fiber-exp-pow-uncoupled")
             self.addObjectsAsChildren(solidf,{"ksi":"0.08","alpha":"200","beta":"2.0","theta":"0.0","phi":"90.0"})
 
-    def addGeometry(self,prestrain=False):
+    def addGeometry(self):
         # Geometry
         Geometry = self.createChild(self.febio_spec,"Geometry")
 
@@ -1035,38 +1035,7 @@ class FEBioIO(BaseIO):
             string=",".join([str(self.Elems.Mat[el][lab]+1) for lab in ["p1","p2","p3"]])
             self.addText(elem_nodes,string)
 
-
-        if prestrain:
-            #ElementData - Prestrain Deformation
-            ElementData = self.createChild(Geometry,"ElementData")
-            for el in range(len(self.Elems.Mat)):
-                elem = self.createChild(ElementData,"element")
-                elem.setAttribute("id",str(el+1))
-
-                elem_F0 = self.createChild(elem,"F0")
-
-                angle = self.Angles[el]
-                normal = self.MeshClass.ENorms[el]
-                normal/=np.linalg.norm(normal)
-                V=np.array([np.cos(np.radians(angle)), np.sin(np.radians(angle)), 0])
-                nz = np.array([0,0,1])
-                avec = V-np.dot(V,normal)/np.dot(nz,normal)*nz
-                avec/=np.linalg.norm(avec)
-                dvec=np.cross(normal,avec)
-
-                Q=np.stack((avec,dvec,normal),axis=1)
-                lam=1.3
-                Fs=np.array([
-                    [lam,0,0],
-                    [0,lam,0],
-                    [0,0,1/(lam**2)]
-                ])
-                F=Q@Fs@Q.T
-
-                text=",".join([  ",".join([str(F[i,j]) for j in range(3)])  for i in range(3)])
-                self.addText(elem_F0,text)
-
-    def addMeshData(self,thickness=30.0):
+    def addMeshData(self,thickness=30.0,prestrain=False):
         '''thickness default = 30 um
         '''
         
@@ -1107,12 +1076,55 @@ class FEBioIO(BaseIO):
             self.addText(elem_mat_axis_a,",".join([str(x) for x in avec]))
             self.addText(elem_mat_axis_d,",".join([str(x) for x in dvec]))
 
+        if prestrain:
+            #ElementData - Prestrain Deformation
+            ElementData = self.createChild(MeshData,"ElementData")
+            ElementData.setAttribute("var","F0")
+            ElementData.setAttribute("elem_set","Part1")
+
+            for el in range(len(self.Elems.Mat)):
+                elem = self.createChild(ElementData,"elem")
+                elem.setAttribute("lid",str(el+1))
+                #elem_F0 = self.createChild(elem,"F0")
+
+                angle = self.Angles[el]
+                normal = self.MeshClass.ENorms[el]
+                normal/=np.linalg.norm(normal)
+                V=np.array([np.cos(np.radians(angle)), np.sin(np.radians(angle)), 0])
+                nz = np.array([0,0,1])
+                avec = V-np.dot(V,normal)/np.dot(nz,normal)*nz
+                avec/=np.linalg.norm(avec)
+                dvec=np.cross(normal,avec)
+
+                Q=np.stack((avec,dvec,normal),axis=1)
+                lam=1.0
+                Fs=np.array([
+                    [lam,0,0],
+                    [0,lam,0],
+                    [0,0,1/(lam**2)]
+                ])
+                F=Q@Fs@Q.T
+
+                text=",".join([  ",".join([str(F[i,j]) for j in range(3)])  for i in range(3)])
+                text="1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0"
+                print("WARNING: OVERIDDEN F TO IDENTITY FOR TESTING")
+                self.addText(elem,text)
+
     def addBoundary(self):
         # Boundary
         Boundary = self.createChild(self.febio_spec,"Boundary")
         fixedbc = self.createChild(Boundary,"fix")
         fixedbc.setAttribute("bc","x,y,z")
         fixedbc.setAttribute("node_set","FixedDisplacement1")        
+
+    def addConstraints(self,prestrain=False):
+        # Constraints
+        if prestrain:
+            Constraints = self.createChild(self.febio_spec,"Constraints")
+            constraint = self.createChild(Constraints,"constraint")
+            constraint.setAttribute("type","prestrain")
+            self.addObjectsAsChildren(constraint,{"tolerance":"0.1"})
+            self.addObjectsAsChildren(constraint,{"min_iters":"3"})
 
     def addLoadData(self):
         # LoadData
@@ -1227,11 +1239,12 @@ class FEBioIO(BaseIO):
         self.addMaterial(prestrain=prestrain,dispersion=dispersion,kip=kip)
         
         print("Create Geometry ...")
-        self.addGeometry(prestrain=prestrain)
+        self.addGeometry()
         print("Create MeshData ...")
-        self.addMeshData()
+        self.addMeshData(prestrain=prestrain)
         print("Finish BCs and loadings ...")
         self.addBoundary()
+        self.addConstraints(prestrain=prestrain)
         self.addLoadData()
         self.addOutput()
         self.addStep(load=load)
