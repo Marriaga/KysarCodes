@@ -2086,3 +2086,83 @@ class MyMesh(object):
                 if (l1>=0 and l2>=0 and l3>=0 and l1<=1 and l2<=1 and l3<=1): #Is inside Triangle
                     return nodes,[l1,l2,l3]
                          
+
+
+
+
+def MakeDiskMesh(plyfile,Radius=1.0,N_Regions=5,N_InnerCirclePoints=6):
+    '''Make a mesh of a disk and export as a ply file.
+
+    plyfile - path to ply file for output
+    Radius[1.0] - radius of the disk
+    N_Regions[5] - number of regions of refinement (total number of nodes grows with 2^N_Regions)
+    N_InnerCirclePoints[6] - number of points in the inner most circle of elements.
+    '''
+    N_Max_points = N_InnerCirclePoints*2**(N_Regions+1)
+    N_Max_layers = max(1,2**N_Regions-2)
+    def nodenumber(i_region,i_layer,i_point):
+        return i_region*N_Max_layers*N_Max_points+i_layer*N_Max_points+i_point+1
+
+    Na=[0]
+    Xa=[0]
+    Ya=[0]
+    Elem=[]
+
+    for i_region in range(N_Regions): # Loop through regions
+        N_region_points = N_InnerCirclePoints*2**(i_region) # Number of points on the perimeter for current region
+        Radius_region = Radius/(2**(N_Regions-i_region-1))    # Radius of outer circle
+        N_region_layers = max(1,2**(i_region-1))  # Number of layers for current region
+
+        for i_layer in range(N_region_layers): # Loop through layers
+            Rli = Radius_region/2*(1 + (i_layer+1)/(N_region_layers))
+
+            for i_point in range(N_region_points): # Loop through points
+                angle = i_point/N_region_points*2*np.pi
+                x=Rli*np.cos(angle)
+                y=Rli*np.sin(angle)
+                Na.append(nodenumber(i_region,i_layer,i_point))
+                Xa.append(x)
+                Ya.append(y)
+
+
+                # ELEMENTS
+                NodeCurrent = nodenumber(i_region,i_layer,i_point)
+                p_next = 0 if i_point==N_region_points-1 else i_point+1
+                NodeNext = nodenumber(i_region,i_layer,p_next)
+                if i_layer==0: # First layer of region
+
+                    if i_region==0: # First Region
+                        NodeBelow=0
+                    else:
+                        last_previous_layer = int(max(1,N_region_layers/2))-1
+                        if i_point==N_region_points-1:
+                            point = 0
+                        else:
+                            point = np.ceil((i_point-0.1)/2)
+                        NodeBelow = nodenumber(i_region-1,last_previous_layer,point)
+
+                    Elem.append([NodeCurrent,NodeNext,NodeBelow])
+                else:
+                    NodeBelow = nodenumber(i_region,i_layer-1,i_point)
+                    NodeNextBelow = nodenumber(i_region,i_layer-1,p_next)
+                    if i_point%2==0:
+                        Elem.append([NodeCurrent,NodeNext,NodeBelow])
+                        Elem.append([NodeNext,NodeNextBelow,NodeBelow])
+                    else:
+                        Elem.append([NodeCurrent,NodeNext,NodeNextBelow])
+                        Elem.append([NodeCurrent,NodeNextBelow,NodeBelow])
+
+
+                if i_layer==N_region_layers-1 and i_region != N_Regions -1:
+                    p_above = i_point*2+1
+                    NodeAbove = nodenumber(i_region+1,0,p_above)
+                    Elem.append([NodeCurrent,NodeAbove,NodeNext])
+
+
+    xy=np.stack([Na,Xa,Ya]).T
+
+    ply = PLYIO()
+    Nodes=CNodes(xy,isnumbered=True)
+    Elements = CElements(Elem)
+    ply.ImportMesh(Nodes,Elements)
+    ply.SaveFile(plyfile)
