@@ -670,10 +670,7 @@ class PLYIO(BaseIO):
         
     def WriteElemsASCII(self,fp):    
         '''Internal function to write the Elements in ASCII format'''
-        tmpdtype = self.Elems.Mat.dtype.descr
-        tmpdtype[0]=('N', self.Endi+'u1')
-        TmpElems = self.Elems.Mat.astype(tmpdtype)
-        TmpElems['N']=3
+        TmpElems = self.getTmpElems()
         self.WriteArray(fp,TmpElems)
         
     def WriteNodesBinary(self,fp):
@@ -688,11 +685,20 @@ class PLYIO(BaseIO):
         
     def WriteElemsBinary(self,fp):
         '''Internal function to write the Elements in binary format'''
-        tmpdtype = self.Elems.Mat.dtype.descr
-        tmpdtype[0]=('N', 'u1')
-        TmpElems =self.Elems.Mat.astype(tmpdtype)
-        TmpElems['N']=3
+        TmpElems = self.getTmpElems()
         TmpElems.tofile(fp)
+
+    def getTmpElems(self):
+        tmpdtype = self.Elems.Mat.dtype.descr
+        tmpdtype[0]=('N', self.Endi+'u1')
+        TmpElems = self.Elems.Mat.copy()
+        TmpElems['p1'] = self.Elems.NewElemsMat[:,0]
+        TmpElems['p2'] = self.Elems.NewElemsMat[:,1]
+        TmpElems['p3'] = self.Elems.NewElemsMat[:,2]
+        TmpElems = TmpElems.astype(tmpdtype)
+        TmpElems['N']=3
+        return TmpElems
+
 
 # Class for VTU I/O        
 class VTUIO(BaseIO):
@@ -727,6 +733,7 @@ class VTUIO(BaseIO):
         n=0
         NSIDES=3  #Triangle
         VTKTYPE=5 #Triangle
+        #TODO: Below is a bug. Instead of Elems.Mat, use Elems.NewElemsMat. Check ply for example
         for line in self.Elems.Mat[["p1","p2","p3"]].copy():
             n+=NSIDES
             conn += " ".join([str(el) for el in line]) + "\n"
@@ -1346,6 +1353,7 @@ class MyMesh(object):
         self.NewElemsMat[:,0] = IndxL['I'][idxp1] # Setup First node in Index numbering
         self.NewElemsMat[:,1] = IndxL['I'][idxp2] # Setup Second node in Index numbering
         self.NewElemsMat[:,2] = IndxL['I'][idxp3] # Setup Third node in Index numbering
+        self.Elems.NewElemsMat = self.NewElemsMat
 
         return IndxL
     
