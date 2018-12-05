@@ -392,7 +392,7 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults
         columns=["Name","Position",
             "VM1_Weig","VM1_Conc","VM1_Ang","VM1_Weigu",
             "VM2_Weig1","VM2_Conc1","VM2_Ang1",
-            "VM2_Weig2","VM2_Conc2","VM2_Ang2","VM2_Weigu"])
+            "VM2_Weig2","VM2_Conc2","VM2_Ang2","VM2_Weigu","Anis_Rsq"])
     BaseAuxDirFolder = os.path.join(DirectionalityBase+"_FiberAnalysis","")
     OAnalysis = MAOA.OrientationAnalysis(BaseAngFolder=BaseAngleFiles,OutputRoot=BaseAuxDirFolder,verbose=True)
     OAnalysis.SetWindowProperties(WType="Tukey",Alpha=0.2,PType="Separable")
@@ -402,6 +402,10 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults
     df2VM = pd.DataFrame(index=[0], columns=[
             "VM1 Weight (%)","VM1 Concentration (k)","VM1 Angle (deg)",
             "VM2 Weight (%)","VM2 Concentration (k)","VM2 Angle (deg)","Uniform Weight (%)"])
+
+    dfAni = pd.DataFrame(index=[0], columns=[
+            "R-squared"])
+
 
     for i in range(Npoints):
         row=PointsDF.iloc[i]
@@ -420,23 +424,32 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults
         # Change below if you want to use Gradient instead of FFT
         Results = OAnalysis.ApplyFFT()
 
-        fig, axes = plt.subplots(3, 2, figsize=(8 , 12)) #pylint: disable=W0612
+        # Make Figure for output ALL results
+        fig, axes = plt.subplots(3, 2, figsize=(16 , 24)) #pylint: disable=W0612
+
+        # Add Windowed Fiber Image
         axes[0,0].imshow(mpimg.imread(BaseAuxImage+".png"),cmap="Greys_r",)
         axes[0,0].set_axis_off()
         axes[0,0].set_title("Windowed Fiber Image")
+
+        # Add Power Spectrum
         axes[0,1].imshow(mpimg.imread(BaseAuxImage+"_PS.png"),cmap="Greys_r",)
         axes[0,1].set_axis_off()
         axes[0,1].set_title("Power Spectrum")
 
-
+        # Get Fitting
         Angles_R,Intensities = Results.GetAI()
         vmf = MAOA.Fitting(Angles_R,Intensities)
+
+        # Fitting with 1 Von-Mises
         p,k,m,u = vmf.FitVMU(1)
         m=np.degrees(m)
+        #  Save Results
         RESULTS.iloc[i][["VM1_Weig","VM1_Conc","VM1_Ang","VM1_Weigu"]]=[p[0],k[0],m[0],u]
+        #  Plot Graph
         vmf.PlotVMU(axes[1,0])
         axes[1,0].set_title("1 VonMises + Uniform")
-
+        #  Plot Table
         df1VM.iloc[0] = np.round([p[0]*100,k[0],m[0],u*100],2)
         mytable = axes[2,0].table(cellText=df1VM.values.T, rowLabels=df1VM.columns, colWidths = [0.2], loc='right')
         mytable.auto_set_font_size(False)
@@ -444,20 +457,41 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults
         axes[2,0].set_position([-0.05,0.1,0.4,0.33])
         axes[2,0].axis('off')
 
+        # Fitting with 2 Von-Mises
         p,k,m,u = vmf.FitVMU(2)
         m=np.degrees(m)
+        #  Save Results
         RESULTS.iloc[i][["VM2_Weig1","VM2_Conc1","VM2_Ang1"]]=[p[0],k[0],m[0]]
         RESULTS.iloc[i][["VM2_Weig2","VM2_Conc2","VM2_Ang2"]]=[p[1],k[1],m[1]]
         RESULTS.iloc[i]["VM2_Weigu"]=u
-        vmf.PlotVMU(axes[1,1])
-        axes[1,1].set_title("2 VonMises + Uniform")
+        # #  Plot Graph
+        # vmf.PlotVMU(axes[1,1])
+        # axes[1,1].set_title("2 VonMises + Uniform")
+        # #  Plot Table
+        # df2VM.iloc[0] = np.round([p[0]*100,k[0],m[0],p[1]*100,k[1],m[1],u*100],2)
+        # mytable = axes[2,1].table(cellText=df2VM.values.T, rowLabels=df2VM.columns, colWidths = [0.2], loc='right')
+        # mytable.auto_set_font_size(False)
+        # mytable.set_fontsize(10)
+        # axes[2,1].set_position([0.4,0.1,0.4,0.33])
+        # axes[2,1].axis('off')
 
-        df2VM.iloc[0] = np.round([p[0]*100,k[0],m[0],p[1]*100,k[1],m[1],u*100],2)
-        mytable = axes[2,1].table(cellText=df2VM.values.T, rowLabels=df2VM.columns, colWidths = [0.2], loc='right')
+
+        # Computing Anisotropy condition (if rsq>=0.998 then fibers are isotropic)
+        rsq = vmf.ComputeIsotropyRsqrd()
+        #  Save Results
+        RESULTS.iloc[i]["Anis_Rsq"]=rsq
+        #  Plot Graph
+        vmf.PlotCumulative(axes[1,1])
+        axes[1,1].set_title("Cumulative Intensities Vs Uniform ")
+        #  Plot Table
+        dfAni.iloc[0] = np.round([rsq],2)
+        mytable = axes[2,1].table(cellText=dfAni.values.T, rowLabels=dfAni.columns, colWidths = [0.2], loc='right')
         mytable.auto_set_font_size(False)
         mytable.set_fontsize(10)
         axes[2,1].set_position([0.4,0.1,0.4,0.33])
         axes[2,1].axis('off')
+
+
 
         plt.savefig(BaseAuxImage +".pdf")
 
