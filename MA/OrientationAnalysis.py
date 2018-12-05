@@ -16,6 +16,7 @@ from joblib import Parallel, delayed
 
 import MA.ImageProcessing as MAIP
 import MA.Tools as MATL
+import DF
 
 
 #Get gauss distribution value     
