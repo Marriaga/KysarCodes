@@ -444,6 +444,9 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults
         # Fitting with 1 Von-Mises
         p,k,m,u = vmf.FitVMU(1)
         m=np.degrees(m)
+        gofresults = vmf.getGOF()
+        print("Goodness of fit of 1 Von-Mises")
+        print(gofresults)
         #  Save Results
         RESULTS.iloc[i][["VM1_Weig","VM1_Conc","VM1_Ang","VM1_Weigu"]]=[p[0],k[0],m[0],u]
         #  Plot Graph
@@ -491,9 +494,7 @@ def ComputeDirectionality(DirectionalityBase,csvFile_PointsDirectionalityResults
         axes[2,1].set_position([0.4,0.1,0.4,0.33])
         axes[2,1].axis('off')
 
-
-
-        plt.savefig(BaseAuxImage +".pdf")
+        fig.savefig(BaseAuxImage +".pdf")
 
     RESULTS.to_csv(csvFile_PointsDirectionalityResults,index=False)
 
@@ -774,7 +775,7 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
     AllData["Outlier"]=[p=="Bottom" and kmax<0 for p,kmax in zip(AllData["Position"],AllData["KMax"])]
     AllData=AllData[np.logical_not(AllData["Outlier"])] #Remove outlier
     
-    MakePlots = ""
+    MakePlots = "123456789ABCDE"
     
     if "1" in MakePlots:    # Plot Fiber Direction vs Theta
         MAFP.regression_figure(AllData,"Theta","AVM",
@@ -1046,7 +1047,7 @@ def CombineAndProcessAllData(FoldersNames,THEBASE,tifrefIndex):
 
 
 
-    CollectFigures=""
+    CollectFigures="1"
 
     if "1" in CollectFigures:
         DestFold="Streamlines"
