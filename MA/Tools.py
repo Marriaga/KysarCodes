@@ -123,19 +123,28 @@ def GetBinRepr(InpFile,OutFile=None):
 
 ### MATPLOTLIB ###
 
-def QPlot(x,y):
+def QPlot(x,y,logx=False):
     ''' Quickly plot line(s).
 
     x - array with xvalues
     y - array or list of arrays with y values.
+    logx[False] - x-axis is in log scale
     '''
-    if not type(y[0])==type([]):
+    if not (type(y[0])==type([]) or type(y[0])==type(np.array((1,2)))):
         y=[y]
     
     fig = plt.figure(figsize=(8,6))
     axs  = fig.add_subplot(111)
+
+    # Set correct plot function
+    if logx:
+        plotfunction = axs.semilogx
+    else:
+        plotfunction = axs.plot
+
+
     for yy in y:
-        axs.plot(x,yy,marker='.',ls='-',label='',markersize=5)
+        plotfunction(x,yy,marker='.',ls='-',label='',markersize=5)
     fig.show()
     plt.waitforbuttonpress()
     plt.close(fig)
