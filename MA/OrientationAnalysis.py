@@ -1,25 +1,22 @@
 #!/usr/bin/python
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 
-from builtins import str
-from builtins import range
-from builtins import object
-import numpy as np
-import scipy as sp
+import multiprocessing
+import os
+from builtins import object, range, str
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import progressbar
-import os
+import scipy as sp
+import scipy.integrate as spint
+import scipy.stats as spst
+from joblib import Parallel, delayed
 
 import MA.ImageProcessing as MAIP
 import MA.Tools as MATL
 
-from joblib import Parallel, delayed
-import multiprocessing
-
-import pandas as pd
 
 #Get gauss distribution value     
 def Gauss(x,s=1,D=1,ori=0.0):
@@ -735,6 +732,7 @@ class Fitting(object):
         return self.parameters        
 
     def PlotVMU(self,ax=None):
+        '''Plot histogram with VM+U line on top'''
         Y=np.zeros_like(self.Angles)
         p_,kappa_,m_,pu_ = self.parameters
         for vmi in range(self.N_VonMises): #p,k,m
@@ -756,6 +754,35 @@ class Fitting(object):
         ax.set_ylabel("Intensities")
         
         if axN: return fig
+
+
+    def ComputeIsotropyRsqrd(self):
+        Int_Intensities = spint.cumtrapz(self.Intensities,self.Angles,initial=0.0)
+        Int_Uniform = np.linspace(0,1.0,len(self.Angles))
+        _,_,r_value, _,_ = spst.linregress(Int_Uniform,Int_Intensities)
+        return r_value**2
+
+    def PlotCumulative(self,ax=None):
+        '''Plot Cumulative histogram with U line on top'''
+
+        Int_Intensities = spint.cumtrapz(self.Intensities,self.Angles,initial=0.0)
+        Int_Uniform = np.linspace(0,1.0,len(self.Angles))
+        
+        axN=False
+        if ax is None:
+            fig = plt.figure()
+            ax=fig.add_subplot(111)
+            axN=True
+        ax.plot(np.degrees(self.Angles),Int_Uniform,color="r")
+        ax.plot(np.degrees(self.Angles),Int_Intensities,color="k")
+        ax.set_xlim([-90,90])
+        ax.set_ylim([0,1.0])
+        ax.set_xlabel("Angles")
+        ax.set_ylabel("Accumulated Intensities")
+        
+        if axN: return fig
+
+
 
     # ========================== #
     # GOF tests (Dimitris Code)
@@ -1415,5 +1442,3 @@ if __name__ == "__main__":
     # Results = OAnalysis.ApplyFFT()
     # Results.PlotHistogram()
     # OAnalysis.ApplyGradient().PlotHistogram()
-
-
