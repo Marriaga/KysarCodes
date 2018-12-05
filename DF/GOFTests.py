@@ -151,6 +151,8 @@ class GOFTests():
         
         self.gofresults = pd.concat([watson_data, kuiper_data, r2_data])
         self.gofresults = self.gofresults[names_]
+
+        return self.gofresults
            
     # ---------------------------------------------------------------------- #
     # 4. the Watson GOF test: 
