@@ -471,7 +471,12 @@ class BaseIO(object):
         
         TODO: It would make sense to do a refactoring of the I/O classes
         such that they would only depend on a MyMesh object as opposed
-        to both a CNodes object and a CElements objects
+        to both a CNodes object and a CElements objects. Would be a bit of work
+        because many functions are already programmed with the Nodes/Elements
+        option. However, fixing this would be simple. Just replace ocurrences
+        of .ImportMesh(Nodes,Elems) to .ImportMesh(Mesh). The Nodes and Element
+        Classes should become internal.
+
         '''
         self.PropTypes=MyPropTypes()
         self.EPT=MyPropTypes()
@@ -692,6 +697,12 @@ class PLYIO(BaseIO):
         tmpdtype = self.Elems.Mat.dtype.descr
         tmpdtype[0]=('N', self.Endi+'u1')
         TmpElems = self.Elems.Mat.copy()
+
+        # Below was to fix a bug where the node numbers were forgotten
+        # Now it breaks when the Elements object didn't come from a mesh
+        # Could be fixed by making the IO functions require a mesh instead
+        # of seperate Nodes and Elements objects. (See TODO in BaseIO)
+
         TmpElems['p1'] = self.Elems.NewElemsMat[:,0]
         TmpElems['p2'] = self.Elems.NewElemsMat[:,1]
         TmpElems['p3'] = self.Elems.NewElemsMat[:,2]
@@ -895,7 +906,7 @@ class FEBioIO(BaseIO):
 
     # Aux Functions
 
-    def processdata(self,fibertype=0,**kwargs):
+    def processdata(self,fibertype=3,**kwargs):
         self.MeshClass.ComputeNormals()
         if fibertype==2:
             self.MeshClass.ComputeCurvatures()
@@ -918,7 +929,7 @@ class FEBioIO(BaseIO):
 
         self.makefiberangles(fibertype=fibertype,**kwargs)
 
-    def makefiberangles(self,fibertype=0,linfuncparam=(-0.0835,156.738)):
+    def makefiberangles(self,fibertype=3,linfuncparam=(-0.0835,156.738)):
         '''Compute angle of fibers for each element.
         fibertype default = 0
             0- aligned with X (like 3 with a,b=0)
@@ -958,17 +969,25 @@ class FEBioIO(BaseIO):
 
     # Add Parts to feb File
 
-    def addBeginning(self):
+    def addBeginning(self,ThreeF=False):
         # Module
         Module = self.createChild(self.febio_spec,"Module")
         Module.setAttribute("type", "solid")
+
+        if ThreeF:
+            Control = self.createChild(self.febio_spec,"Control")
+            StepParam = {
+                "use_three_field_shell":"1",
+                "symmetric_stiffness":"0",
+            }
+            self.addObjectsAsChildren(Control,StepParam)
 
         # Globals
         Globals = self.createChild(self.febio_spec,"Globals")
         Constants = self.createChild(Globals,"Constants")
         self.addObjectsAsChildren(Constants,{"T":"0","R":"0","Fc":"0"})
 
-    def addMaterial(self,prestrain=False,dispersion=False,kip=0.15833):
+    def addMaterial(self,c1MR=0.08,kbulk=100,augLagrangian=False,fibers=True,dispersion=False,kip=0.15833,prestrain=False):
         # Material
         Material = self.createChild(self.febio_spec,"Material")
 
@@ -976,6 +995,9 @@ class FEBioIO(BaseIO):
         material1 = self.createChild(Material,"material")
         material1.setAttribute("id", "1")
         material1.setAttribute("name", "Material1")
+        self.addText(self.createChild(material1,"k"),str(kbulk))
+        if augLagrangian:
+            self.addObjectsAsChildren(material1,{"laugon":"1","atol":"0.01"})
 
         if prestrain:
             material1.setAttribute("type", "uncoupled prestrain elastic")
@@ -990,59 +1012,116 @@ class FEBioIO(BaseIO):
         # Matrix
         solidnh = self.createChild(elastic,"solid")
         solidnh.setAttribute("type", "Mooney-Rivlin")
-        self.addObjectsAsChildren(solidnh,{"c1":"0.08","c2":"0.0","k":"1000"}) #E=2MPa => G=0.66uN/um2 => c1=0.33
+        self.addObjectsAsChildren(solidnh,{"c1":str(c1MR),"c2":"0.0"}) #E=2MPa => G=0.66uN/um2 => c1=0.33
 
         # Fibers
-        solidf = self.createChild(elastic,"solid")
-        if dispersion:
-            solidf.setAttribute("type", "hdispfibers")
-            self.addObjectsAsChildren(solidf,{"k1":"0.08","k2":"200","kip":str(kip),"kop":"0.5"})
-        else:
-            solidf.setAttribute("type", "fiber-exp-pow-uncoupled")
-            self.addObjectsAsChildren(solidf,{"ksi":"0.08","alpha":"200","beta":"2.0","theta":"0.0","phi":"90.0"})
+        if fibers:
+            solidf = self.createChild(elastic,"solid")
+            if dispersion:
+                solidf.setAttribute("type", "hdispfibers")
+                self.addObjectsAsChildren(solidf,{"k1":str(c1MR),"k2":"200","kip":str(kip),"kop":"0.5"})
+            else:
+                solidf.setAttribute("type", "fiber-exp-pow-uncoupled")
+                self.addObjectsAsChildren(solidf,{"ksi":str(c1MR),"alpha":"200","beta":"2.0","theta":"0.0","phi":"90.0"})
 
-    def addGeometry(self):
+    def addGeometry(self,Quadratic=False):
+        elemtype = "tri6" if Quadratic else "tri3"
+
+        def strcoord(x):
+            return " "+np.format_float_scientific(x, exp_digits=3, precision=7,unique=False)
+        def strnode(n):
+            return "{:6d}".format(n)
+
         # Geometry
         Geometry = self.createChild(self.febio_spec,"Geometry")
 
         #Nodes
         Nodes = self.createChild(Geometry,"Nodes")
         Nodes.setAttribute("name","Object01")
-        for nd in range(len(self.Nodes.Mat)):
+        print(len(self.Nodes.Mat),self.MeshClass.NNodes)
+        for nd in range(self.MeshClass.NNodes):
             node_coords = self.createChild(Nodes,"node")
             node_coords.setAttribute("id",str(nd+1))
-            string=",".join([str(self.Nodes.Mat[nd][lab]) for lab in ["x","y","z"]])
+            string=",".join([strcoord(self.Nodes.Mat[nd][lab]) for lab in ["x","y","z"]])
             self.addText(node_coords,string)
+
+        if Quadratic:
+            for nd in range(self.MeshClass.NMNodes):
+                node_coords = self.createChild(Nodes,"node")
+                node_coords.setAttribute("id",str(self.MeshClass.NNodes+nd+1))
+                string = ",".join([strcoord(x) for x in self.MeshClass.MNodes[nd]])
+                self.addText(node_coords,string)
 
         #Elements
         Elements = self.createChild(Geometry,"Elements")
-        Elements.setAttribute("type","tri3")
+        Elements.setAttribute("type",elemtype)
         Elements.setAttribute("name","Part1")
         Elements.setAttribute("mat","1")
         for el in range(len(self.Elems.Mat)):
             elem_nodes = self.createChild(Elements,"elem")
             elem_nodes.setAttribute("id",str(el+1))
-            string=",".join([str(self.Elems.Mat[el][lab]+1) for lab in ["p1","p2","p3"]])
+            string=",".join([strnode(self.Elems.Mat[el][lab]+1) for lab in ["p1","p2","p3"]])
+            if Quadratic:
+                string=string+","+",".join([ strnode(n+1) for n in self.MeshClass.EM[el] ]) 
             self.addText(elem_nodes,string)
 
-        #NodeSet 
+        #NodeSet - FixedDisplacement1
         NodeSet = self.createChild(Geometry,"NodeSet")
         NodeSet.setAttribute("name","FixedDisplacement1")
         for nd in range(len(self.Nodes.Mat)):
             if self.MeshClass.NIsB[nd]:
                 node = self.createChild(NodeSet,"node")
                 node.setAttribute("id",str(nd+1))
+        if Quadratic:
+            for nd in range(self.MeshClass.NMNodes):
+                if self.MeshClass.MIsB[nd]:
+                    node = self.createChild(NodeSet,"node")
+                    node.setAttribute("id",str(self.MeshClass.NNodes+nd+1))
 
-        #Surface
+        #NodeSet (center)
+        NodeSet = self.createChild(Geometry,"NodeSet")
+        NodeSet.setAttribute("name","Center")
+        node = self.createChild(NodeSet,"node")
+        #Find Center
+        xc=0.0
+        yc=0.0
+        zc=0.0
+        Nnodes=len(self.Nodes.Mat)
+        for nd in range(Nnodes):
+            x,y,z = [self.Nodes.Mat[nd][lab] for lab in ["x","y","z"]]
+            xc+=x
+            yc+=y
+            zc+=z
+        xc/=Nnodes
+        yc/=Nnodes
+        zc/=Nnodes
+        print(xc,yc,zc)
+        #Find node nearest to the center
+        x,y,z = [self.Nodes.Mat[0][lab] for lab in ["x","y","z"]]
+        distmin = (x-xc)*(x-xc)+(y-yc)*(y-yc)+(z-zc)*(z-zc)
+        nmin = 0
+        for nd in range(Nnodes):
+            x,y,z = [self.Nodes.Mat[nd][lab] for lab in ["x","y","z"]]
+            dist = (x-xc)*(x-xc)+(y-yc)*(y-yc)+(z-zc)*(z-zc)
+            if dist < distmin:
+                distmin=dist
+                nmin=nd
+
+        node.setAttribute("id",str(nmin+1))
+        print(nmin)
+
+        #Surface - PressureLoad1
         Surface = self.createChild(Geometry,"Surface")
         Surface.setAttribute("name","PressureLoad1")
         for el in range(len(self.Elems.Mat)):
-            elem_nodes = self.createChild(Surface,"tri3")
+            elem_nodes = self.createChild(Surface,elemtype)
             elem_nodes.setAttribute("id",str(el+1))
-            string=",".join([str(self.Elems.Mat[el][lab]+1) for lab in ["p1","p2","p3"]])
+            string=",".join([strnode(self.Elems.Mat[el][lab]+1) for lab in ["p1","p2","p3"]])
+            if Quadratic:
+                string=string+","+",".join([ strnode(n+1) for n in self.MeshClass.EM[el] ]) 
             self.addText(elem_nodes,string)
 
-    def addMeshData(self,thickness=30.0,prestrain=False):
+    def addMeshData(self,thickness=30.0,prestrain=False,lam=1.0,Quadratic=False):
         '''thickness default = 30 um
         '''
         
@@ -1056,7 +1135,8 @@ class FEBioIO(BaseIO):
         for el in range(len(self.Elems.Mat)):
             elem_thick = self.createChild(ElementData,"elem")
             elem_thick.setAttribute("lid",str(el+1))
-            self.addText(elem_thick,str(thickness)+","+str(thickness)+","+str(thickness))
+            NdPerEl = 3 if not Quadratic else 6
+            self.addText(elem_thick,",".join([str(thickness)]*NdPerEl))
 
 
         #ElementData - mat_axis (Fiber Orientation)
@@ -1104,7 +1184,6 @@ class FEBioIO(BaseIO):
                 dvec=np.cross(normal,avec)
 
                 Q=np.stack((avec,dvec,normal),axis=1)
-                lam=1.0
                 Fs=np.array([
                     [lam,0,0],
                     [0,lam,0],
@@ -1113,8 +1192,6 @@ class FEBioIO(BaseIO):
                 F=Q@Fs@Q.T
 
                 text=",".join([  ",".join([str(F[i,j]) for j in range(3)])  for i in range(3)])
-                text="1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0"
-                print("WARNING: OVERIDDEN F TO IDENTITY FOR TESTING")
                 self.addText(elem,text)
 
     def addBoundary(self):
@@ -1163,6 +1240,11 @@ class FEBioIO(BaseIO):
             var = self.createChild(plotfile,"var")
             var.setAttribute("type",outdata)
 
+        logfile = self.createChild(Output,"logfile")
+        node_data = self.createChild(logfile,"node_data")
+        node_data.setAttribute("data","uz")
+        node_data.setAttribute("node_set","Center")
+
     def addStep(self,load=2E-3): 
         'Default load = 2E-3 = 2MPa'
         # Step1
@@ -1176,7 +1258,7 @@ class FEBioIO(BaseIO):
             "time_steps":"100",
             "step_size":"0.01",
             "max_refs":"15",
-            "max_ups":"10",
+            "max_ups":"0",# usually 10. 0 means Full Newton
             "diverge_reform":"1",
             "reform_each_time_step":"1",
             "dtol":"0.001",
@@ -1185,11 +1267,12 @@ class FEBioIO(BaseIO):
             "lstol":"0.9",
             "min_residual":"1e-020",
             #"plot_level":"PLOT_MUST_POINT",
-            "qnmethod":"0"}
+            "qnmethod":"0",
+            }
         self.addObjectsAsChildren(Control,StepParam)
 
         time_stepper = self.createChild(Control,"time_stepper")
-        self.addObjectsAsChildren(time_stepper,{"dtmin":"0.00001"})
+        self.addObjectsAsChildren(time_stepper,{"dtmin":"0.001"})
         dtmax = self.createChild(time_stepper,"dtmax")
         dtmax.setAttribute("lc","2")
         self.addText(dtmax,"0.2")
@@ -1201,7 +1284,6 @@ class FEBioIO(BaseIO):
 
         analysis = self.createChild(Control,"analysis")
         analysis.setAttribute("type","static")
-
 
         #Loads
         Loads = self.createChild(Step1,"Loads")
@@ -1217,7 +1299,9 @@ class FEBioIO(BaseIO):
         linear = self.createChild(surface_load,"linear")
         self.addText(linear,"0")
       
-    def SaveFile(self,febiofile,Endi=None,fibertype=0,prestrain=False,dispersion=False,kip=0.15833,load=-2E-2):
+    def SaveFile(self,febiofile,Endi=None,fibertype=3,prestrain=False,
+        dispersion=False,kip=0.15833,load=-2E-2,kbulk=100,c1MR=0.08,
+        augLagrangian=False,fibers=True,thickness=30.0,lam=1.0,Quadratic=False,ThreeF=False):
         '''Save mesh to FEBio file.
         
         febiofile - path to output febiofile
@@ -1227,12 +1311,25 @@ class FEBioIO(BaseIO):
         dispersion[False] - include dispersion (required HDisp plugin)
         kip[0.15833] - in-plane dispersion parameter (when dispersion=True)
         load[-2E-2] - value of load pressure in MPa.
+        kbulk[100] - bulk modulus.
+        c1MR[0.08] - Mooney-Rivlin c1 parameter
+        augLarangian[False] - Use Augmented Lagrangian to enforc incompressibility
+        fibers[True] - Use a contitutive law with fibers (False-Only Mooney-Rivlin)
+        thickness[30] - Value of thickness of membrane
+        lam[1.0] - Stretch for prestrain
+        Quadratic[False] - Use quadratic elements
+        ThreeF[False] - Use 3-field formulation (forced to True if Quadratic is True)
         '''
         if Endi is not None:
             self.Endi = Endi
         if self.Endi == "=":
             self.Endi=SYS_ENDI
         self.NormEndi()
+
+        if Quadratic:
+            self.MeshClass.GenerateQuadraticNodesAndElements()
+        if augLagrangian:
+            ThreeF = True
     
         print("Process necessary geometrical data ...")
         self.processdata(fibertype=fibertype)
@@ -1242,13 +1339,15 @@ class FEBioIO(BaseIO):
         self.febio_spec = self.createChild(self.doc,"febio_spec")
         self.febio_spec.setAttribute("version", "2.5")
 
-        self.addBeginning()
-        self.addMaterial(prestrain=prestrain,dispersion=dispersion,kip=kip)
+        self.addBeginning(ThreeF=ThreeF)
+        #self.addMaterial(prestrain=prestrain,dispersion=dispersion,kip=kip,kbulk=kbulk)
+        self.addMaterial(c1MR=c1MR,kbulk=kbulk,augLagrangian=augLagrangian,
+            fibers=fibers,dispersion=dispersion,kip=kip,prestrain=prestrain)
         
         print("Create Geometry ...")
-        self.addGeometry()
+        self.addGeometry(Quadratic=Quadratic)
         print("Create MeshData ...")
-        self.addMeshData(prestrain=prestrain)
+        self.addMeshData(prestrain=prestrain,thickness=thickness,lam=lam,Quadratic=Quadratic)
         print("Finish BCs and loadings ...")
         self.addBoundary()
         self.addConstraints(prestrain=prestrain)
@@ -2041,7 +2140,6 @@ class MyMesh(object):
     def _getBaricentricCoordinates(point,P1,P2,P3):
         return _Aux_getBaricentricCoordinates(point,P1,P2,P3)
 
-
     def _quickInterp(self,field_lbl,nodes,baris):
         val=0.0
         for node,bari in zip(nodes,baris):
@@ -2085,6 +2183,31 @@ class MyMesh(object):
                 l1,l2,l3 = self._getBaricentricCoordinates(np.array([XX,YY]),P1,P2,P3)
                 if (l1>=0 and l2>=0 and l3>=0 and l1<=1 and l2<=1 and l3<=1): #Is inside Triangle
                     return nodes,[l1,l2,l3]
+
+    def GenerateQuadraticNodesAndElements(self):
+        self.MNodes = np.empty((self.NSides,3),dtype='f8') #Mid-point Nodes (numbering = self.NNodes+i)
+        self.SM = np.empty((self.NSides),dtype='i4') #Mid-point per side
+        self.EM = np.empty((self.NElems,3),dtype='i4') #Mid-points per element
+        self.MIsB = np.zeros(self.NSides,dtype=np.bool) # Is Boundary per Mid-Node
+        self.NMNodes = self.NSides
+
+        for si in range(self.NSides):
+            ni,nf = [self.Sides[si][lab] for lab in ['ni','nf']] # Get nodes and elements of the side
+            pi,pf = self.Nodes.GetNumpyPoints([ni,nf])
+            pm = (pi+pf)/2
+            self.MNodes[si,:]=pm[:]
+            self.SM[si]=self.NNodes+si
+            self.MIsB[si] = self.SIsB[si]
+        
+        for e in range(self.NElems):
+            n1,n2,n3 = self.EN[e]
+            self.EM[e,0] = self.SM[self.FindSide(n1,n2)] # Mid-node 1
+            self.EM[e,1] = self.SM[self.FindSide(n2,n3)] # Mid-node 2
+            self.EM[e,2] = self.SM[self.FindSide(n3,n1)] # Mid-node 3
+
+
+
+
                          
 
 
