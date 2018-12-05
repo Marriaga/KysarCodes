@@ -106,21 +106,22 @@ class GOFTests():
     # ---------------------------------------------------------------------- #
     # Initializer / Instance Attributes: 
     # 1. new initializer: 
-    def __init__( self, Angles, Intensities, parameters, N_VonMises, Uniform ):
-        self.Angles = None
-        self.Intensities = None
-        self.results = None
-        self.N_VonMises = None
-        self.Uniform = None
+    def __init__(self, Angles=None, Intensities=None, parameters=None, N_VonMises=None, Uniform=None):
+        self.Angles = Angles
+        self.Intensities = Intensities
+        self.parameters = parameters
+        self.N_VonMises = N_VonMises
+        self.Uniform = Uniform
         self.gofresults = None
     
     # 2. update the results: 
-    def UpdateData( self, Angles, Intensities, parameters, N_VonMises, Uniform ):
-        self.Angles = Angles
-        self.Intensities = Intensities
-        self.results = parameters
-        self.N_VonMises = N_VonMises
-        self.Uniform = Uniform
+    def UpdateData( self, Angles=None, Intensities=None, parameters=None, N_VonMises=None, Uniform=None):
+        if Angles is not None: self.Angles = Angles
+        if Intensities is not None: self.Intensities = Intensities
+        if parameters is not None: self.parameters = parameters
+        if N_VonMises is not None: self.N_VonMises = N_VonMises
+        if Uniform is not None: self.Uniform = Uniform
+        self.gofresults = None
 
     # ---------------------------------------------------------------------- #
     # 3. Compute and Collect GOF results
@@ -480,7 +481,7 @@ class GOFTests():
                      Uniform distributions, calculated over the vector x.
         """
         pdf_vmu = np.zeros_like(self.Angles)
-        p_, kappa_, m_, pu_ = self.results
+        p_, kappa_, m_, pu_ = self.parameters
         #print(p_, kappa_, m_, pu_)
         for vmi in range( self.N_VonMises ): # p, k, m 
             pdf_vmu += p_[vmi] * sp.stats.vonmises.pdf( x, kappa_[vmi], \
@@ -506,7 +507,7 @@ class GOFTests():
                      Uniform distributions, calculated over the vector x.
         """
         cdf_vmu = np.zeros_like(x)
-        p_, kappa_, m_, pu_ = self.results
+        p_, kappa_, m_, pu_ = self.parameters
         for vmi in range( self.N_VonMises ): # p, k, m 
             cdf_vmu += p_[vmi] * sp.stats.vonmises.cdf( x, kappa_[vmi], \
                                                  loc = m_[vmi], scale = 0.5 )

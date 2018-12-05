@@ -16,7 +16,7 @@ from joblib import Parallel, delayed
 
 import MA.ImageProcessing as MAIP
 import MA.Tools as MATL
-import DF
+import DF.GOFTests as DFGT
 
 
 #Get gauss distribution value     
@@ -619,16 +619,18 @@ class Fitting(object):
         self.Angles = Angles
         self.Intensities = Intensities
         self.parameters = None
-        self.GOFTests = DF.GOFTests()#[NEW] 
-        self.gofresults = None
 
     def getParameters(self):
         return self.parameters
 
     def getGOF(self):
-        self.GOFTests.UpdateData(self.Angles,self.Intensities,self.parameters,self.N_VonMises,self.Uniform)#[NEW] 
-        self.gofresults = self.GOFTests.computeGOF()#[New] 
-        return self.gofresults
+        GOFTestInstance = DFGT.GOFTests(
+            Angles = self.Angles,
+            Intensities = self.Intensities,
+            parameters = self.parameters,
+            N_VonMises = self.N_VonMises,
+            Uniform = self.Uniform)
+        return GOFTestInstance.computeGOF()
 
     # ======= #
     # Von-Mises Fitting
