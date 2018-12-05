@@ -2,9 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tue Jul 10 17:02:13 2018
-Updated on Tue Nov 13 --:--:-- 2018
-
-Author Dimitrios Fafalis: Post-Doctoral Researcher at Dr. Kysar's Lab
+Author Dimitrios Fafalis 
 
 Contents of the package:
     
@@ -15,29 +13,21 @@ Contents of the package:
     The package contains one class: 
         
         "class GOFTests()"
-        
-    How to use this class: 
     
     Create an instance of this class as follows: 
         
-        1. in the initializer of Fitting() class:
-            
-            self.GOFTests = DF.GOFTests()
-            
-            self.gofresults = None
+        gofTests_instance = DFGOF.GOFTests( fit_object )
         
-        2. in the getGOF(self) instance function of the Fitting() class: 
+        where "fit_object" is the instance of the class: 
             
-            def getGOF(self):
-                self.GOFTests.UpdateData( self.Angles, self.Intensities, 
-                                     self.parameters, self.N_VonMises, self.Uniform )
-                self.gofresults = self.GOFTests.computeGOF()
-                self.computeGOF()
-                return self.gofresults
+            MA.OrientationAnalysis.Fitting()
+            
+            updated with the results from the distribution fitting using: 
                 
-        3. the information needed as input for class GOFTests comes from 
-            the results of the object related to the Fitting() class of MA.
-                        
+                "fit_object.FitVMU"
+                
+                "FitVMU" is an instance method of class "Fitting" above.
+        
     The class "GOFTests" contains the following instance methods: 
     
     A. specific statistical methods (pre/post-processing of data):
@@ -57,37 +47,10 @@ Contents of the package:
     5. myR2
     6. R2_GOF
     7. Plot_PP_GOF
-    8. Uniformity_test
-    
-    C. Other functions: 
-    -------------------
-    1. UpdateData
-    2. computeGOF
-    3. dispersion_coeff
-
-Contents (by order of occurance): 
-    1.  __init__
-    2.  UpdateData
-    3.  computeGOF
-    4.  Watson_GOF
-    5.  Watson_CDF
-    6.  Kuiper_GOF
-    7.  Kuiper_CDF
-    8.  CDFX
-    9.  Get_PDF_VMU
-    10. Get_CDF_VMU
-    11. makePoints
-    12. Uniformity_test
-    13. ECDF
-    14. myR2
-    15. R2_GOF
-    16. Plot_PP_GOF
-    17. dispersion_coeff
 
 @author: df
 """
 
-# import python packages to use: 
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy as sp
@@ -97,62 +60,226 @@ import pandas as pd
 
 
 class GOFTests():
-    '''
-    How to call this class from another class: 
-        self.GOFTests.UpdateData( self.Angles, self.Intensities, 
-                                  self.parameters, self.N_VonMises, self.Uniform )
-    '''
     
-    # ---------------------------------------------------------------------- #
     # Initializer / Instance Attributes: 
-    # 1. new initializer: 
-    def __init__( self, Angles, Intensities, parameters, N_VonMises, Uniform ):
-        self.Angles = None
-        self.Intensities = None
-        self.results = None
-        self.N_VonMises = None
-        self.Uniform = None
-        self.gofresults = None
-    
-    # 2. update the results: 
-    def UpdateData( self, Angles, Intensities, parameters, N_VonMises, Uniform ):
-        self.Angles = Angles
-        self.Intensities = Intensities
-        self.results = parameters
-        self.N_VonMises = N_VonMises
-        self.Uniform = Uniform
+    def __init__( self, fit_object ):
+#    def __init__( self, Angles, Intensities ):
+        self.Angles = fit_object.Angles
+        self.Intensities = fit_object.Intensities
+        self.results = fit_object.parameters
+        self.N_VonMises = fit_object.N_VonMises
+        self.Uniform = fit_object.Uniform
+        self.gof_results = None
+            
+
+    #[NEW] def UpdateData(self,Angles,Intensities,parameters,N_VonMises,Uniform):
+        # self.Angles = Angles
+        # self.Intensities = Intensities
+        # self.results = parameters
+        # self.N_VonMises = N_VonMises
+        # self.Uniform = Uniform
+
+
 
     # ---------------------------------------------------------------------- #
-    # 3. Compute and Collect GOF results
-    def computeGOF(self):
+    # instance method: 
+    def collect_gof_results( self ):
         """
-        Compute and Collect results from the following GOF tests: 
+        Collect results from GOF tests: 
             1. Watson
             2. Kuiper
             3. R2
         Returns:
         --------
-            self.gofresults
+            self.gof_results
         """
-        # Watson GOF test: 
+        
         watson_data = self.Watson_GOF( alphal=2 )
         
-        # Kuiper GOF test: 
         kuiper_data = self.Kuiper_GOF( )
         
-        # R2 coefficient of determination: 
         r2_data = self.R2_GOF( )
         
         # if you want to keep only the common columns from the data frames
-        #   of the tests, use the following names_ list: 
+        #   of the tests: 
         names_ = ['GOFTest', 'Symbol', 'Statistic', 'CriticalValue','PValue', \
                   'SignifLevel', 'Decision']
         
-        self.gofresults = pd.concat([watson_data, kuiper_data, r2_data])
-        self.gofresults = self.gofresults[names_]
-           
+#        self.gof_results = pd.concat([watson_data, kuiper_data, r2_data], \
+#                                     axis=0, join='inner', names=names_)
+        
+        # or concatenate all columns, the default way concat works: 
+        self.gof_results = pd.concat([watson_data, kuiper_data, r2_data])
+        self.gof_results = self.gof_results[names_]
+        
+        return self.gof_results
+        
     # ---------------------------------------------------------------------- #
-    # 4. the Watson GOF test: 
+    # instance method: 
+    def Get_PDF_VMU( self, x ):
+        """
+        Parameters:
+        -----------
+            x: any vector over which to compute the PDF of the mixture VMU 
+        
+        Returns:
+        --------
+            pdf_vmu: the PDF for the underlying mixture of Von Mises and 
+                     Uniform distributions, calculated over the vector x.
+        """
+        pdf_vmu = np.zeros_like(self.Angles)
+        p_, kappa_, m_, pu_ = self.results
+        #print(p_, kappa_, m_, pu_)
+        for vmi in range( self.N_VonMises ): # p, k, m 
+            pdf_vmu += p_[vmi] * sp.stats.vonmises.pdf( x, kappa_[vmi], \
+                                                 loc = m_[vmi], scale = 0.5 )
+        
+        if self.Uniform:
+            pdf_vmu += pu_ * sp.stats.vonmises.pdf( x, 1.0E-3, \
+                                                    loc = 0.0, scale = 0.5 )
+        
+        return pdf_vmu
+        
+    # ---------------------------------------------------------------------- #
+    # instance method: 
+    def Get_CDF_VMU( self, x ):
+        """
+        Parameters:
+        -----------
+            x: any vector over which to compute the CDF of the mixture VMU 
+        
+        Returns:
+        --------
+            cdf_vmu: the CDF for the underlying mixture of Von Mises and 
+                     Uniform distributions, calculated over the vector x.
+        """
+        cdf_vmu = np.zeros_like(x)
+        p_, kappa_, m_, pu_ = self.results
+        for vmi in range( self.N_VonMises ): # p, k, m 
+            cdf_vmu += p_[vmi] * sp.stats.vonmises.cdf( x, kappa_[vmi], \
+                                                 loc = m_[vmi], scale = 0.5 )
+           
+        if self.Uniform:
+            cdf_vmu += pu_ * sp.stats.vonmises.cdf( x, 1.0E-3, \
+                                                    loc = 0.0, scale = 0.5 )
+        
+        return cdf_vmu
+    
+    # ---------------------------------------------------------------------- #
+    # instance method: 
+    def makePoints( self ):
+        """
+        Function to convert the normalized intensities into points per angle
+        Parameters:
+        -----------
+        n_X : array-like, shape=(bin_angle, 2)
+        col-1 : bins of angles in degrees (usually 2 degrees width)
+        col-2 : normalized intensity of light per bin angle: [angles, n_values]
+    
+        Returns:
+        --------
+        p_X : array-like, shape=(n_pop, )
+        col-1 : angles in rads of n_X[:,0]
+        """
+        Int = self.Intensities
+        Angs = np.degrees(self.Angles)
+        
+        # the equally-spaced segments in the space [-pi/2, pi/2]:
+        bin_angle = len( Int )
+        
+        # population factor:
+        sfact = 3.0
+        
+        # convert the intensity to points per angle:
+        #p_Xi = np.round( sfact*n_X[:,1] / max(n_X[:,1]) )
+        #p_Xi = np.round( sfact*(n_X[:,1]/min(n_X[:,1])) )
+        p_Xi = np.ceil( sfact*(Int/min(Int)) )
+        
+        # convert them to integer type:
+        p_Xi = p_Xi.astype(int)
+        
+        # the total population for all angles:
+        #p_Xi_sum = sum(p_Xi)
+        
+        # make the points: 
+        p_Xd = np.zeros((0,))
+        for i in range(bin_angle):
+            Xtemp = np.repeat(Angs[i], p_Xi[i])
+            p_Xd = np.append(p_Xd, Xtemp)
+        
+        # convert degrees to radians:
+        p_X = np.radians(p_Xd)
+            
+        return p_X
+    
+    # ---------------------------------------------------------------------- #
+    # instance method: 
+    def CDFX( self ):
+        """
+        Function to get the CDF of FITTED or EXPECTED distribution 
+            over the observed x-axis points.
+        Called in methods:
+            'Watson_GOF' 
+            'Kuiper_GOF' 
+        Parameters:
+        -----------
+            self.makePoints(): returns the observed points over which the CDFX
+                                will be evaluated.
+        Returns:
+        --------
+            cdfX: the requested CDF
+        """
+        p_X = self.makePoints()
+        aa = np.sort( p_X )
+        
+        cX_t = self.Get_CDF_VMU( aa )
+                
+        if max(cX_t) > 1:
+            cdfX = cX_t - (max(cX_t) - 1.)
+        else:
+            cdfX = cX_t
+        
+        return cdfX
+    
+    # ---------------------------------------------------------------------- #
+    # instance method: 
+    def Watson_CDF( self, x ):
+        """
+        Function to return the value of the CDF of the asymptotic Watson 
+        distribution at x: 
+        Parameters:
+        -----------
+            x: (scalar) value to compute the above CDF.
+        Returns:
+        --------
+            y: (scalar) the CDF of asymptotic Watson computed at x.
+        References: 
+        ----------
+            1. Equation (6.3.37) of:
+                Mardia K. V., Jupp P. E., (2000)
+                "Directional Statistics", Wiley.
+                ISBN: 0-471-95333-4 
+            2. Equation (7.2.10) of:
+                Jammalamadaka S. Rao, SenGupta A. (2001), 
+                "Topics in Circular Statistics", World Scientific.
+                ISBN: 981-02-3778-2 
+        """
+        epsi = 1e-10
+                
+        k = 1
+        y = 0
+        asum = 1
+        while asum > epsi:
+            md = ((-1)**(k-1))*np.exp(-2.*((np.pi)**2)*(k**2)*x)
+            y += 2.*md
+            k += 1
+            asum = abs(md)
+            
+        #print('Watson k iterations =',k)
+        return y
+    
+    # ---------------------------------------------------------------------- #
+    # instance method: 
     def Watson_GOF( self, alphal=2 ):
         """
         From Book: "Applied Statistics: Using SPSS, STATISTICA, MATLAB and R"
@@ -200,24 +327,24 @@ class GOFTests():
         Us = (U2 - 0.1/n + 0.1/n**2)*(1.0 + 0.8/n)
         
         alpha_lev = np.array([0.1, 0.05, 0.025, 0.01, 0.005])
-        #              alpha=   =0.1     =0.05   =0.025  =0.01   =0.005
+        #              alpha=   =0.1     =0.05    =0.025   =0.01    =0.005
         c = np.array([ [ 2,     0.143,	0.155,	0.161,	0.164,	0.165 ],
                        [ 3,     0.145,	0.173,	0.194,	0.213,	0.224 ],
                        [ 4,     0.146,	0.176,	0.202,	0.233,	0.252 ],
                        [ 5,     0.148,	0.177,	0.205,	0.238,	0.262 ],
                        [ 6,     0.149,	0.179,	0.208,	0.243,	0.269 ],
-                       [ 7,     0.149,	0.180,  0.210,	0.247,	0.274 ],
-                       [ 8, 	    0.150,	0.181,	0.211,	0.250,	0.278 ],
+                       [ 7, 	0.149,	0.180,   0.210,	0.247,	0.274 ],
+                       [ 8, 	0.150,	0.181,	0.211,	0.250,	0.278 ],
                        [ 9,     0.150,	0.182,	0.212,	0.252,	0.281 ],
-                       [ 10,    0.150,	0.182,	0.213,	0.254,	0.283 ],
-                       [ 12,	    0.150,	0.183,	0.215,	0.256,	0.287 ],
-                       [ 14,    	0.151,	0.184,	0.216,	0.258,	0.290 ],
-                       [ 16,    	0.151,	0.184,	0.216,	0.259,	0.291 ],
-                       [ 18,	    0.151,	0.184,	0.217,	0.259,	0.292 ],
-                       [ 20,    	0.151,	0.185,	0.217,	0.261,	0.293 ],
-                       [ 30,	    0.152,	0.185,	0.219,	0.263,	0.296 ],
-                       [ 40,    	0.152,	0.186,	0.219,	0.264,	0.298 ],
-                       [ 50,	    0.152,	0.186,	0.220,	0.265,	0.299 ],
+                       [ 10,	0.150,	0.182,	0.213,	0.254,	0.283 ],
+                       [ 12,	0.150,	0.183,	0.215,	0.256,	0.287 ],
+                       [ 14,	0.151,	0.184,	0.216,	0.258,	0.290 ],
+                       [ 16,	0.151,	0.184,	0.216,	0.259,	0.291 ],
+                       [ 18,	0.151,	0.184,	0.217,	0.259,	0.292 ],
+                       [ 20,	0.151,	0.185,	0.217,	0.261,	0.293 ],
+                       [ 30,	0.152,	0.185,	0.219,	0.263,	0.296 ],
+                       [ 40,	0.152,	0.186,	0.219,	0.264,	0.298 ],
+                       [ 50,	0.152,	0.186,	0.220,	0.265,	0.299 ],
                        [ 100,	0.152,	0.186,	0.221,	0.266,	0.301 ] ])
 
         # compute the critical value, by linear interpolation: 
@@ -261,46 +388,51 @@ class GOFTests():
     
         return Watson_gof_results
         # return U2, Us, uc, pval2, pvals, H0_W, alpha_lev[alphal]
-      
+
     # ---------------------------------------------------------------------- #
-    # 5. The Watson CDF function: 
-    def Watson_CDF( self, x ):
+    # instance method: 
+    def Kuiper_CDF( self, x, n ):
         """
-        Function to return the value of the CDF of the asymptotic Watson 
+        Function to return the value of the CDF of the asymptotic Kuiper
         distribution at x: 
         Parameters:
         -----------
             x: (scalar) value to compute the above CDF.
+            n: (integer) the number of points available from the observed data
         Returns:
         --------
-            y: (scalar) the CDF of asymptotic Watson computed at x.
+            y: (scalar) the CDF of asymptotic Kuiper computed at x.
         References: 
         ----------
-            1. Equation (6.3.37) of:
+            1. Equation (6.3.29) of:
                 Mardia K. V., Jupp P. E., (2000)
                 "Directional Statistics", Wiley.
                 ISBN: 0-471-95333-4 
-            2. Equation (7.2.10) of:
+            2. Equation (7.2.6) of:
                 Jammalamadaka S. Rao, SenGupta A. (2001), 
                 "Topics in Circular Statistics", World Scientific.
                 ISBN: 981-02-3778-2 
         """
         epsi = 1e-10
-                
+        
+        x2 = x * x
+        g = -8.*x/(3.*np.sqrt(n))
         k = 1
         y = 0
         asum = 1
         while asum > epsi:
-            md = ((-1)**(k-1))*np.exp(-2.*((np.pi)**2)*(k**2)*x)
-            y += 2.*md
+            k2 = k * k
+            md1 = (4.*k2*x2 - 1.)*np.exp(-2.*k2*x2)
+            md2 = k2*(4.*k2*x2 - 3.)*np.exp(-2.*k2*x2)
+            y += 2.*md1 + g*md2
             k += 1
-            asum = abs(md)
+            asum = abs(md1+md2)
             
-        #print('Watson k iterations =',k)
+        #print('Kuiper k iterations =', k)
         return y
-        
+    
     # ---------------------------------------------------------------------- #
-    # 6. the Kuiper GOF test: 
+    # instance method: 
     def Kuiper_GOF( self ):
         """
         cY_:  the probability distribution of the postulated model on ordered data
@@ -394,210 +526,9 @@ class GOFTests():
         
         #return Vn, Vcc, pVn, H0_K, alp_lev
         return Kuiper_gof_results    
-
-    # ---------------------------------------------------------------------- #
-    # 7. the Kuiper CDF function: 
-    def Kuiper_CDF( self, x, n ):
-        """
-        Function to return the value of the CDF of the asymptotic Kuiper
-        distribution at x: 
-        Parameters:
-        -----------
-            x: (scalar) value to compute the above CDF.
-            n: (integer) the number of points available from the observed data
-        Returns:
-        --------
-            y: (scalar) the CDF of asymptotic Kuiper computed at x.
-        References: 
-        ----------
-            1. Equation (6.3.29) of:
-                Mardia K. V., Jupp P. E., (2000)
-                "Directional Statistics", Wiley.
-                ISBN: 0-471-95333-4 
-            2. Equation (7.2.6) of:
-                Jammalamadaka S. Rao, SenGupta A. (2001), 
-                "Topics in Circular Statistics", World Scientific.
-                ISBN: 981-02-3778-2 
-        """
-        epsi = 1e-10
-        
-        x2 = x * x
-        g = -8.*x/(3.*np.sqrt(n))
-        k = 1
-        y = 0
-        asum = 1
-        while asum > epsi:
-            k2 = k * k
-            md1 = (4.*k2*x2 - 1.)*np.exp(-2.*k2*x2)
-            md2 = k2*(4.*k2*x2 - 3.)*np.exp(-2.*k2*x2)
-            y += 2.*md1 + g*md2
-            k += 1
-            asum = abs(md1+md2)
-            
-        #print('Kuiper k iterations =', k)
-        return y
     
     # ---------------------------------------------------------------------- #
-    # 8. the CDF for the Fitted Distribution: 
-    def CDFX( self ):
-        """
-        Function to get the CDF of FITTED or EXPECTED distribution 
-            over the observed x-axis points.
-        Called in methods:
-            'Watson_GOF' 
-            'Kuiper_GOF' 
-        Parameters:
-        -----------
-            self.makePoints(): returns the observed points over which the CDFX
-                                will be evaluated.
-        Returns:
-        --------
-            cdfX: the requested CDF
-        """
-        p_X = self.makePoints()
-        aa = np.sort( p_X )
-        
-        cX_t = self.Get_CDF_VMU( aa )
-                
-        if max(cX_t) > 1:
-            cdfX = cX_t - (max(cX_t) - 1.)
-        else:
-            cdfX = cX_t
-        
-        return cdfX
-    
-    # ---------------------------------------------------------------------- #
-    # 9. get the PDF for the mixture of VMU model: 
-    def Get_PDF_VMU( self, x ):
-        """
-        Parameters:
-        -----------
-            x: any vector over which to compute the PDF of the mixture VMU 
-        
-        Returns:
-        --------
-            pdf_vmu: the PDF for the underlying mixture of Von Mises and 
-                     Uniform distributions, calculated over the vector x.
-        """
-        pdf_vmu = np.zeros_like(self.Angles)
-        p_, kappa_, m_, pu_ = self.results
-        #print(p_, kappa_, m_, pu_)
-        for vmi in range( self.N_VonMises ): # p, k, m 
-            pdf_vmu += p_[vmi] * sp.stats.vonmises.pdf( x, kappa_[vmi], \
-                                                 loc = m_[vmi], scale = 0.5 )
-        
-        if self.Uniform:
-            pdf_vmu += pu_ * sp.stats.vonmises.pdf( x, 1.0E-3, \
-                                                    loc = 0.0, scale = 0.5 )
-        
-        return pdf_vmu
-        
-    # ---------------------------------------------------------------------- #
-    # 10. get the CDF for the mixture of VMU model: 
-    def Get_CDF_VMU( self, x ):
-        """
-        Parameters:
-        -----------
-            x: any vector over which to compute the CDF of the mixture VMU 
-        
-        Returns:
-        --------
-            cdf_vmu: the CDF for the underlying mixture of Von Mises and 
-                     Uniform distributions, calculated over the vector x.
-        """
-        cdf_vmu = np.zeros_like(x)
-        p_, kappa_, m_, pu_ = self.results
-        for vmi in range( self.N_VonMises ): # p, k, m 
-            cdf_vmu += p_[vmi] * sp.stats.vonmises.cdf( x, kappa_[vmi], \
-                                                 loc = m_[vmi], scale = 0.5 )
-           
-        if self.Uniform:
-            cdf_vmu += pu_ * sp.stats.vonmises.cdf( x, 1.0E-3, \
-                                                    loc = 0.0, scale = 0.5 )
-        
-        return cdf_vmu
-    
-    # ---------------------------------------------------------------------- #
-    # 11. generate points on the semi-circle based on the intensities: 
-    def makePoints( self ):
-        """
-        Function to convert the normalized intensities into points per angle
-        Parameters:
-        -----------
-        n_X : array-like, shape=(bin_angle, 2)
-        col-1 : bins of angles in degrees (usually 2 degrees width)
-        col-2 : normalized intensity of light per bin angle: [angles, n_values]
-    
-        Returns:
-        --------
-        p_X : array-like, shape=(n_pop, )
-        col-1 : angles in rads of n_X[:,0]
-        """
-        Int = self.Intensities
-        Angs = np.degrees(self.Angles)
-        
-        # the equally-spaced segments in the space [-pi/2, pi/2]:
-        bin_angle = len( Int )
-        
-        # population factor:
-        sfact = 3.0
-        
-        # convert the intensity to points per angle:
-        #p_Xi = np.round( sfact*n_X[:,1] / max(n_X[:,1]) )
-        #p_Xi = np.round( sfact*(n_X[:,1]/min(n_X[:,1])) )
-        p_Xi = np.ceil( sfact*(Int/min(Int)) )
-        
-        # convert them to integer type:
-        p_Xi = p_Xi.astype(int)
-        
-        # the total population for all angles:
-        #p_Xi_sum = sum(p_Xi)
-        
-        # make the points: 
-        p_Xd = np.zeros((0,))
-        for i in range(bin_angle):
-            Xtemp = np.repeat(Angs[i], p_Xi[i])
-            p_Xd = np.append(p_Xd, Xtemp)
-        
-        # convert degrees to radians:
-        p_X = np.radians(p_Xd)
-            
-        return p_X
-    
-    # ---------------------------------------------------------------------- #
-    # 12. test for the isotropicity (uniformity) of angles: 
-    def Uniformity_test( self ):
-        '''
-        Assesement of Uniformity of Raw data:
-            using a uniform probability plot:
-                plot the sorted observations theta_i/pi against i(n+1)
-                If the data come from a uniform distribution, then the points
-                should lie near a straight line of unit slope passing through 
-                the origin.
-            The function also returns the R2 "coefficient of determination" 
-                for that fit: the closer to unity the more uniform the data.
-        '''
-        # get the observed data: 
-        pX = ( self.makePoints() + np.pi/2 )/np.pi
-        n = len(pX)
-        h = np.arange(1/(n+1), n/(n+1), 1/(n+1))
-        fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-        ax.plot(h, pX[1::], color='r', linestyle=':', label='data')
-        #ax.plot([0, 1], [0, 1], color='g', linestyle='--', label='45$^o$ line')
-        ax.plot(h, h, color='g', linestyle='--', label='45$^o$ line')
-        ax.square()
-        ax.legend()
-        
-        # compute the R2 coefficient of determination: 
-        SSE = sum((h - pX[1::])**2)
-        SSTO = sum((h - np.mean(h))**2)
-        R2 = 1 - SSE/SSTO
-        ax.annotate('$R^2=%s$' % R2, xy=(0.4,1.0), xytext=(0.4, 1.0) )
-        
-        return R2
-    
-    # ---------------------------------------------------------------------- #
-    # 13. the CDF for the Experimental Data: 
+    # instance method: 
     def ECDF( self, data ):
         """
         CAUTION!: NOT for Light Intensity (from FFT) data! 
@@ -638,7 +569,7 @@ class GOFTests():
         return x_values, y_values
     
     # ---------------------------------------------------------------------- #
-    # 14. coefficient of Determination R2 for the fitted distribution: 
+    # instance method: 
     def myR2( self, Fexp, Fobs ):
         """
         Function to compute the coefficient of determination R2, 
@@ -667,7 +598,7 @@ class GOFTests():
         return R2
     
     # ---------------------------------------------------------------------- #
-    # 15. GOF based on the value of R2: 
+    # instance method: 
     def R2_GOF( self ):
         """
         Function to prepare the data for the calculation of the R2 coefficient.
@@ -715,7 +646,7 @@ class GOFTests():
         #return R2, H0_R2
     
     # ---------------------------------------------------------------------- #
-    # 16. Generate the Probability-Probability plot: 
+    # instance method: 
     def Plot_PP_GOF( self, Fexp, Fobs ):
         """
         Generate the Probability-Probability plot.
@@ -740,23 +671,19 @@ class GOFTests():
         return fig
 
     # ---------------------------------------------------------------------- #
-    # 17. compute the dispersion coefficient: 
+    # instance method: 
     def dispersion_coeff( self ):
         """
         Return the dispersion coefficient of one family of dispersed fibers,
         as defined by Holpzapfel.
-        kappa_ip = ( 1 - I1(b) / I0(b) )/2      (eq. 2.23)
-        Ref: Holzapfel et al. (2015), "Modelling non-symmetric collagen fibre 
-            dispersion in arterial walls", J. R. Soc. Interface 12: 20150188 
+        kappa_ip = ( 1 - I1(b) / I0(b) )/2 
         """
         # Collect the dispersion coefficients for every fiber family: 
         dispersion = []
-        p_, kappa_, m_, pu_ = self.parameters
+        p_, kappa_, m_, pu_ = self.results
         for vmi in range( self.N_VonMises ): # p, k, m 
             kap_ = kappa_[vmi]
             dispersion.append( 0.5*(1 - (sp.special.i1(kap_))/(sp.special.i0(kap_)) ) )
         
         return dispersion
     
-# End of Class GOFTests 
-# -------------------------------------------------------------------------- #       
