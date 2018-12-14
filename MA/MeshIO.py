@@ -1024,7 +1024,7 @@ class FEBioIO(BaseIO):
                 solidf.setAttribute("type", "fiber-exp-pow-uncoupled")
                 self.addObjectsAsChildren(solidf,{"ksi":str(c1MR),"alpha":"200","beta":"2.0","theta":"0.0","phi":"90.0"})
 
-    def addGeometry(self,Quadratic=False):
+    def addGeometry(self,Quadratic=False,centerloc=None):
         elemtype = "tri6" if Quadratic else "tri3"
 
         def strcoord(x):
@@ -1038,7 +1038,6 @@ class FEBioIO(BaseIO):
         #Nodes
         Nodes = self.createChild(Geometry,"Nodes")
         Nodes.setAttribute("name","Object01")
-        print(len(self.Nodes.Mat),self.MeshClass.NNodes)
         for nd in range(self.MeshClass.NNodes):
             node_coords = self.createChild(Nodes,"node")
             node_coords.setAttribute("id",str(nd+1))
@@ -1083,19 +1082,28 @@ class FEBioIO(BaseIO):
         NodeSet.setAttribute("name","Center")
         node = self.createChild(NodeSet,"node")
         #Find Center
-        xc=0.0
-        yc=0.0
-        zc=0.0
+
         Nnodes=len(self.Nodes.Mat)
-        for nd in range(Nnodes):
-            x,y,z = [self.Nodes.Mat[nd][lab] for lab in ["x","y","z"]]
-            xc+=x
-            yc+=y
-            zc+=z
-        xc/=Nnodes
-        yc/=Nnodes
-        zc/=Nnodes
-        print(xc,yc,zc)
+        if centerloc is None:
+            xc=0.0
+            yc=0.0
+            zc=0.0
+            for nd in range(Nnodes):
+                x,y,z = [self.Nodes.Mat[nd][lab] for lab in ["x","y","z"]]
+                xc+=x
+                yc+=y
+                zc+=z
+            xc/=Nnodes
+            yc/=Nnodes
+            zc/=Nnodes
+        else:
+            xc=centerloc[0]
+            yc=centerloc[1]
+            try:
+                zc=centerloc[2]
+            except:
+                zc=0.0
+
         #Find node nearest to the center
         x,y,z = [self.Nodes.Mat[0][lab] for lab in ["x","y","z"]]
         distmin = (x-xc)*(x-xc)+(y-yc)*(y-yc)+(z-zc)*(z-zc)
@@ -1108,7 +1116,7 @@ class FEBioIO(BaseIO):
                 nmin=nd
 
         node.setAttribute("id",str(nmin+1))
-        print(nmin)
+        print("Target Node Number =",nmin+1)
 
         #Surface - PressureLoad1
         Surface = self.createChild(Geometry,"Surface")
@@ -1194,11 +1202,14 @@ class FEBioIO(BaseIO):
                 text=",".join([  ",".join([str(F[i,j]) for j in range(3)])  for i in range(3)])
                 self.addText(elem,text)
 
-    def addBoundary(self):
+    def addBoundary(self,shellBC=False):
         # Boundary
         Boundary = self.createChild(self.febio_spec,"Boundary")
         fixedbc = self.createChild(Boundary,"fix")
-        fixedbc.setAttribute("bc","x,y,z")
+        if shellBC:
+            fixedbc.setAttribute("bc","sx,sy,sz")
+        else:
+            fixedbc.setAttribute("bc","x,y,z")
         fixedbc.setAttribute("node_set","FixedDisplacement1")        
 
     def addConstraints(self,prestrain=False):
@@ -1230,7 +1241,7 @@ class FEBioIO(BaseIO):
             else:
                 self.addObjectsAsChildren(loadcurve2,{"point":str(f)+",0.1"})
 
-    def addOutput(self):
+    def addOutput(self,febiofile):
         # Output
         Output = self.createChild(self.febio_spec,"Output")
         plotfile = self.createChild(Output,"plotfile")
@@ -1240,9 +1251,12 @@ class FEBioIO(BaseIO):
             var = self.createChild(plotfile,"var")
             var.setAttribute("type",outdata)
 
+        root,ext = os.path.splitext(febiofile)
+
         logfile = self.createChild(Output,"logfile")
         node_data = self.createChild(logfile,"node_data")
         node_data.setAttribute("data","uz")
+        # node_data.setAttribute("file",root+"_displacement.txt")
         node_data.setAttribute("node_set","Center")
 
     def addStep(self,load=2E-3): 
@@ -1299,8 +1313,8 @@ class FEBioIO(BaseIO):
         linear = self.createChild(surface_load,"linear")
         self.addText(linear,"0")
       
-    def SaveFile(self,febiofile,Endi=None,fibertype=3,prestrain=False,
-        dispersion=False,kip=0.15833,load=-2E-2,kbulk=100,c1MR=0.08,
+    def SaveFile(self,febiofile,Endi=None,fibertype=3,prestrain=False,centerloc=None,
+        dispersion=False,kip=0.15833,load=-2E-2,kbulk=100,c1MR=0.08,shellBC=False,
         augLagrangian=False,fibers=True,thickness=30.0,lam=1.0,Quadratic=False,ThreeF=False):
         '''Save mesh to FEBio file.
         
@@ -1308,11 +1322,13 @@ class FEBioIO(BaseIO):
         Endi[None] - set the endienness of the binary output
         fibertype[0] - type of fiber alignement. (see makefiberangles() doc for more)
         prestrain[False] - include prestrain (requires Prestrain plugin)
+        centerloc[None] - tuple with coordinates to get node number and export data
         dispersion[False] - include dispersion (required HDisp plugin)
         kip[0.15833] - in-plane dispersion parameter (when dispersion=True)
         load[-2E-2] - value of load pressure in MPa.
         kbulk[100] - bulk modulus.
         c1MR[0.08] - Mooney-Rivlin c1 parameter
+        shellBC[False] - Used Fixed "shell" displacemnets (hold shell by bottom nodes instead of top nodes)
         augLarangian[False] - Use Augmented Lagrangian to enforc incompressibility
         fibers[True] - Use a contitutive law with fibers (False-Only Mooney-Rivlin)
         thickness[30] - Value of thickness of membrane
@@ -1345,14 +1361,14 @@ class FEBioIO(BaseIO):
             fibers=fibers,dispersion=dispersion,kip=kip,prestrain=prestrain)
         
         print("Create Geometry ...")
-        self.addGeometry(Quadratic=Quadratic)
+        self.addGeometry(Quadratic=Quadratic,centerloc=centerloc)
         print("Create MeshData ...")
         self.addMeshData(prestrain=prestrain,thickness=thickness,lam=lam,Quadratic=Quadratic)
         print("Finish BCs and loadings ...")
-        self.addBoundary()
+        self.addBoundary(shellBC=shellBC)
         self.addConstraints(prestrain=prestrain)
         self.addLoadData()
-        self.addOutput()
+        self.addOutput(febiofile)
         self.addStep(load=load)
 
         with open(febiofile, 'w') as fp:

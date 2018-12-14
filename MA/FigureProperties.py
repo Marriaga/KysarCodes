@@ -107,6 +107,8 @@ def get_size(Nrow,Ncol,Ori="P",Paper="Letter",Margins=(1.0,1.0)):
 
 
 HalfPage=get_size(2,1,Ori="P",Paper="Letter",Margins=(1.0,1.0))
+HalfColumn=get_size(4,2,Ori="P",Paper="Letter",Margins=(1.0,1.0))
+HalfColumn=get_size(3,1.5,Ori="P",Paper="Letter",Margins=(1.0,1.0))
 
 
 

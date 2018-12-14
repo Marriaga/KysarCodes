@@ -150,7 +150,7 @@ def QPlot(x,y,logx=False):
     plt.close(fig)
 
 
-def QMPlot(Xa,Ya,marker=""):
+def QMPlot(Xa,Ya,marker="",labels=None):
     ''' Quickly plot multiple lines.
     Xa - list of arrays with x values
     Ya - list of arrays with y values
@@ -160,8 +160,10 @@ def QMPlot(Xa,Ya,marker=""):
     axs  = fig.add_subplot(111)
     linelist=["-",":","-."]
     for x,y in zip(Xa,Ya):
-        axs.plot(x,y,marker=marker,ls=linelist[0],label='',markersize=5)
+        axs.plot(x,y,marker=marker,ls=linelist[0],markersize=5)
         linelist.insert(0, linelist.pop())
+    if labels is not None:
+        axs.legend(labels)
     fig.show()
     plt.waitforbuttonpress()
     plt.close(fig)
